@@ -1,13 +1,13 @@
 {
-  "bte_railpathtool.tool.name": "Rail Path Tool",
-  "bte_railpathtool.tool.segment_length": "Segment Length",
-  "bte_railpathtool.tool.track_width": "Track Width",
-  "bte_railpathtool.tool.curve_threshold": "Curve Threshold (°)",
-  "bte_railpathtool.tool.points": "Control Points",
-  "bte_railpathtool.tool.add_point": "Add Point (Right Click)",
-  "bte_railpathtool.tool.confirm": "Confirm (Enter)",
-  "bte_railpathtool.tool.delete": "Delete Last Point (Del)",
-  "bte_railpathtool.tool.cancel": "Cancel",
-  "bte_railpathtool.tool.no_points": "No points placed",
-  "bte_railpathtool.tool.points_count": "%d point(s)"
+  "bte_railpathtool.tool.name":           "BTE Rail Path Tool",
+  "bte_railpathtool.tool.density":        "Density (pts/block)",
+  "bte_railpathtool.tool.snap_ground":    "Snap to Ground",
+  "bte_railpathtool.tool.preview":        "Preview",
+  "bte_railpathtool.tool.confirm":        "Confirm",
+  "bte_railpathtool.tool.cancel_last":    "Cancel Last Point",
+  "bte_railpathtool.tool.reset":          "Reset",
+  "bte_railpathtool.tool.points":         "Points: %d",
+  "bte_railpathtool.tool.hint":           "Right Click: point | Enter: confirm | Del: cancel",
+  "bte_railpathtool.tool.no_axiom":       "Axiom not found – mod disabled.",
+  "bte_railpathtool.tool.loaded":         "Loaded successfully."
 }
