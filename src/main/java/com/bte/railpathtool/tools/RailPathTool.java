@@ -15,16 +15,20 @@ import imgui.ImGui;
 import net.minecraft.block.BlockState;
 import net.minecraft.block.Blocks;
 import net.minecraft.block.LecternBlock;
+import net.minecraft.block.enums.WallShape;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.render.Camera;
 import net.minecraft.client.render.VertexFormats;
 import net.minecraft.client.util.math.MatrixStack;
 import net.minecraft.client.world.ClientWorld;
 import net.minecraft.nbt.NbtCompound;
+import net.minecraft.registry.Registries;
 import net.minecraft.state.property.BooleanProperty;
 import net.minecraft.state.property.EnumProperty;
 import net.minecraft.state.property.IntProperty;
 import net.minecraft.state.property.Properties;
+import net.minecraft.state.property.Property;
+import net.minecraft.util.Identifier;
 import net.minecraft.util.math.BlockPos;
 import net.minecraft.util.math.Direction;
 import net.minecraft.util.math.Vec3d;
@@ -33,6 +37,76 @@ import org.joml.Matrix4f;
 import java.util.*;
 
 public class RailPathTool implements Tool {
+
+    private enum RailStyle { CLASSIC, NATURAL }
+
+    private static final String[] STYLE_LABELS = { "Classique", "Naturel" };
+
+    private static BlockState makeWall(Direction... dirs) {
+        var s = Blocks.MUD_BRICK_WALL.getDefaultState()
+                .with(Properties.UP,               false)
+                .with(Properties.WATERLOGGED,      false)
+                .with(Properties.NORTH_WALL_SHAPE, WallShape.NONE)
+                .with(Properties.SOUTH_WALL_SHAPE, WallShape.NONE)
+                .with(Properties.EAST_WALL_SHAPE,  WallShape.NONE)
+                .with(Properties.WEST_WALL_SHAPE,  WallShape.NONE);
+        for (Direction d : dirs) {
+            s = switch (d) {
+                case NORTH -> s.with(Properties.NORTH_WALL_SHAPE, WallShape.LOW);
+                case SOUTH -> s.with(Properties.SOUTH_WALL_SHAPE, WallShape.LOW);
+                case EAST  -> s.with(Properties.EAST_WALL_SHAPE,  WallShape.LOW);
+                case WEST  -> s.with(Properties.WEST_WALL_SHAPE,  WallShape.LOW);
+                default    -> s;
+            };
+        }
+        return s;
+    }
+
+    private static final BlockState WALL_NS = makeWall(Direction.NORTH, Direction.SOUTH);
+    private static final BlockState WALL_EW = makeWall(Direction.EAST,  Direction.WEST);
+    private static final BlockState WALL_NE = makeWall(Direction.NORTH, Direction.EAST);
+    private static final BlockState WALL_NW = makeWall(Direction.NORTH, Direction.WEST);
+    private static final BlockState WALL_SE = makeWall(Direction.SOUTH, Direction.EAST);
+    private static final BlockState WALL_SW = makeWall(Direction.SOUTH, Direction.WEST);
+
+    private static BlockState makeCoral(Direction facing) {
+        return Blocks.DEAD_FIRE_CORAL_WALL_FAN.getDefaultState()
+                .with(Properties.HORIZONTAL_FACING, facing)
+                .with(Properties.WATERLOGGED, false);
+    }
+
+    @SuppressWarnings({"unchecked", "rawtypes"})
+    private static BlockState makeShelf(Direction facing) {
+        var id = Identifier.of("minecraft", "spruce_shelf");
+        if (!Registries.BLOCK.containsId(id)) {
+            return Blocks.SPRUCE_TRAPDOOR.getDefaultState()
+                    .with(Properties.HORIZONTAL_FACING, facing)
+                    .with(Properties.OPEN,              true)
+                    .with(Properties.WATERLOGGED,       false);
+        }
+        var block = Registries.BLOCK.get(id);
+        var state = block.getDefaultState();
+        for (Property<?> prop : state.getProperties()) {
+            try {
+                switch (prop.getName()) {
+                    case "facing" -> {
+                        if (prop instanceof EnumProperty ep && ep.getValues().contains(facing))
+                            state = state.with(ep, facing);
+                    }
+                    case "waterlogged", "powered" -> {
+                        if (prop instanceof BooleanProperty bp)
+                            state = state.with(bp, false);
+                    }
+                }
+            } catch (Exception ignored) {}
+        }
+        return state;
+    }
+
+    private static final BlockState SHELF_N = makeShelf(Direction.NORTH);
+    private static final BlockState SHELF_S = makeShelf(Direction.SOUTH);
+    private static final BlockState SHELF_E = makeShelf(Direction.EAST);
+    private static final BlockState SHELF_W = makeShelf(Direction.WEST);
 
     private static final int LEAF_STRAIGHT = 2;
     private static final int LEAF_DIAGONAL = 3;
@@ -44,11 +118,12 @@ public class RailPathTool implements Tool {
     private final int[]     density      = {10};
     private final boolean[] snapToGround = {false};
     private final boolean[] showPreview  = {true};
+    private final int[]     styleIndex   = {0};
 
-    @Override public String  name()           { return "BTE Rail Path"; }
-    @Override public char    iconChar()       { return '\ue912'; }
-    @Override public String  keybindId()      { return "bte_rail_path"; }
-    @Override public int     defaultKeybind() { return 0; }
+    @Override public String name()        { return "BTE Rail Path"; }
+    @Override public char   iconChar()    { return '\ue912'; }
+    @Override public String keybindId()   { return "bte_rail_path"; }
+    @Override public int defaultKeybind() { return 0; }
 
     @Override
     public EnumSet<AxiomPermission> requiredPermissions() {
@@ -58,17 +133,23 @@ public class RailPathTool implements Tool {
     @Override public void reset() { points.clear(); preview.clear(); dirty = false; }
 
     @Override
-    public void writeSettings(NbtCompound tag) {
-        tag.putInt("density",     density[0]);
-        tag.putBoolean("snap",    snapToGround[0]);
-        tag.putBoolean("preview", showPreview[0]);
+    public void writeSettings(NbtCompound t) {
+        t.putInt("density",  density[0]);
+        t.putBoolean("snap", snapToGround[0]);
+        t.putBoolean("prev", showPreview[0]);
+        t.putInt("style",    styleIndex[0]);
     }
 
     @Override
-    public void loadSettings(NbtCompound tag) {
-        if (tag.contains("density"))  density[0]      = tag.getInt("density").orElse(density[0]);
-        if (tag.contains("snap"))     snapToGround[0] = tag.getBoolean("snap").orElse(snapToGround[0]);
-        if (tag.contains("preview"))  showPreview[0]  = tag.getBoolean("preview").orElse(showPreview[0]);
+    public void loadSettings(NbtCompound t) {
+        if (t.contains("density")) density[0]      = t.getInt("density").orElse(density[0]);
+        if (t.contains("snap"))    snapToGround[0] = t.getBoolean("snap").orElse(snapToGround[0]);
+        if (t.contains("prev"))    showPreview[0]  = t.getBoolean("prev").orElse(showPreview[0]);
+        if (t.contains("style"))   styleIndex[0]   = t.getInt("style").orElse(styleIndex[0]);
+    }
+
+    private RailStyle currentStyle() {
+        return styleIndex[0] == 1 ? RailStyle.NATURAL : RailStyle.CLASSIC;
     }
 
     @Override
@@ -88,32 +169,26 @@ public class RailPathTool implements Tool {
         if (points.size() >= 2) renderControlLines(matrices, camera);
 
         Tool.renderRaycastOverlay(
-            Tool.raycastBlock(false, true, Tool.defaultIncludeFluids()),
-            matrices, camera
-        );
+                Tool.raycastBlock(false, true, Tool.defaultIncludeFluids()),
+                matrices, camera);
     }
 
     private void renderControlLines(MatrixStack matrices, Camera camera) {
-        var provider = VertexConsumerProvider.shared();
+        var vcp = VertexConsumerProvider.shared();
         matrices.push();
         matrices.translate(-camera.getPos().x, -camera.getPos().y, -camera.getPos().z);
-
-        var buffer = provider.begin(VertexFormat.DrawMode.LINES, VertexFormats.POSITION_COLOR_NORMAL);
-        var pose   = matrices.peek();
-        for (int i = 0; i < points.size() - 1; i++) {
-            Shapes.line(buffer, pose,
-                Vec3d.ofCenter(points.get(i)),
-                Vec3d.ofCenter(points.get(i + 1))
-            );
-        }
-
-        var mesh = provider.build();
-        AxiomRenderer.setShaderColour(1f, 0.45f, 0.1f, 1f);
+        var buf  = vcp.begin(VertexFormat.DrawMode.LINES, VertexFormats.POSITION_COLOR_NORMAL);
+        var pose = matrices.peek();
+        for (int i = 0; i < points.size() - 1; i++)
+            Shapes.line(buf, pose,
+                    Vec3d.ofCenter(points.get(i)),
+                    Vec3d.ofCenter(points.get(i + 1)));
+        var mesh = vcp.build();
+        AxiomRenderer.setShaderColour(1f, 0.5f, 0.1f, 1f);
         AxiomRenderer.renderPipeline(AxiomRenderPipelines.LINES_WITHOUT_WRITE_DEPTH, null, mesh, false);
-        AxiomRenderer.setShaderColour(1f, 0.45f, 0.1f, 0.3f);
+        AxiomRenderer.setShaderColour(1f, 0.5f, 0.1f, 0.35f);
         AxiomRenderer.renderPipeline(AxiomRenderPipelines.LINES_IGNORE_DEPTH, null, mesh, true);
         AxiomRenderer.setShaderColour(1f, 1f, 1f, 1f);
-
         matrices.pop();
     }
 
@@ -124,6 +199,7 @@ public class RailPathTool implements Tool {
         ImGui.separator();
 
         boolean changed = false;
+
         if (ImGui.sliderInt("Densité (pts/bloc)", density, 2, 32)) changed = true;
 
         if (ImGui.checkbox("Coller au sol", snapToGround[0])) {
@@ -131,14 +207,30 @@ public class RailPathTool implements Tool {
             changed = true;
         }
         ImGui.sameLine();
-        if (ImGui.checkbox("Aperçu", showPreview[0])) showPreview[0] = !showPreview[0];
+        if (ImGui.checkbox("Aperçu", showPreview[0]))
+            showPreview[0] = !showPreview[0];
+
+        ImGui.separator();
+        ImGuiHelper.separatorWithText("Style de rail");
+
+        for (int i = 0; i < STYLE_LABELS.length; i++) {
+            if (i > 0) ImGui.sameLine();
+            if (ImGui.radioButton(STYLE_LABELS[i], styleIndex[0] == i)) {
+                styleIndex[0] = i;
+                changed = true;
+            }
+        }
+
+        String desc = switch (currentStyle()) {
+            case CLASSIC -> "Corail + murs en brique de boue + etageres";
+            case NATURAL -> "Pupitre + gravier + litiere de feuilles";
+        };
+        ImGui.textColored(0xFF888888, desc);
 
         if (changed) dirty = true;
 
         ImGui.separator();
-
         if (points.size() >= 2 && ImGui.button("Valider", -1, 0)) confirm();
-
         if (!points.isEmpty()) {
             if (ImGui.button("Annuler dernier", -1, 0)) {
                 points.remove(points.size() - 1);
@@ -147,9 +239,8 @@ public class RailPathTool implements Tool {
             ImGui.sameLine();
             if (ImGui.button("Réinitialiser", -1, 0)) reset();
         }
-
         ImGui.separator();
-        ImGui.textColored(0xFFAAAAAA, "Clic droit : point  |  Entrée : valider  |  Suppr : annuler");
+        ImGui.textColored(0xFFAAAAAA, "Clic droit: point | Entrée: valider | Suppr: annuler");
     }
 
     @Override
@@ -186,73 +277,172 @@ public class RailPathTool implements Tool {
     @Override public String listenForEnter() { return points.size() >= 2 ? "Valider" : null; }
 
     private void confirm() {
-        var region = new ChunkedBlockRegion();
-        buildRail(region);
-        RegionHelper.pushBlockRegionChange(region, "BTE Rail Path");
+        var r = new ChunkedBlockRegion();
+        buildRail(r);
+        RegionHelper.pushBlockRegionChange(r, "BTE Rail Path");
         reset();
     }
 
-    private record SplinePoint(double wx, double wy, double wz, int bx, int by, int bz) {}
-    private record Segment(int cx, int cy, int cz, int dx, int dz) {}
+    private record Seg(int cx, int cy, int cz, int dx, int dz) {}
+    private record Pt(double x, double y, double z, int bx, int by, int bz) {}
 
     private void buildRail(ChunkedBlockRegion region) {
-        List<SplinePoint> spline = catmullRom(points, density[0]);
-        if (spline.size() < 2) return;
-        if (snapToGround[0]) spline = snapAllToGround(spline);
+        List<Pt> sp = catmullRom(points, density[0]);
+        if (sp.size() < 2) return;
+        if (snapToGround[0]) sp = snapAllToGround(sp);
 
-        List<Segment> segments = toSegments(spline);
-        if (segments.isEmpty()) return;
+        List<Seg> segs = buildSegments(sp);
+        if (segs.isEmpty()) return;
 
         Set<BlockPos> centers = new HashSet<>();
-        for (Segment s : segments) centers.add(new BlockPos(s.cx(), s.cy(), s.cz()));
+        for (Seg s : segs) centers.add(new BlockPos(s.cx(), s.cy(), s.cz()));
 
-        for (int i = 0; i < segments.size(); i++) {
-            Segment prev    = i > 0              ? segments.get(i - 1) : null;
-            Segment current = segments.get(i);
-            Segment next    = i < segments.size() - 1 ? segments.get(i + 1) : null;
-            placeSegment(region, prev, current, next, segments, i, centers);
+        for (int i = 0; i < segs.size(); i++) {
+            Seg cur = segs.get(i);
+            Seg prv = i > 0             ? segs.get(i - 1) : null;
+            Seg nxt = i < segs.size()-1 ? segs.get(i + 1) : null;
+            switch (currentStyle()) {
+                case CLASSIC -> placeSegmentClassic(region, cur, prv, nxt, centers);
+                case NATURAL -> placeSegmentNatural(region, cur, prv, nxt, segs, i, centers);
+            }
         }
     }
 
-    private List<Segment> toSegments(List<SplinePoint> spline) {
-        List<Segment> out  = new ArrayList<>();
-        BlockPos      last = null;
-
-        for (SplinePoint p : spline) {
+    private List<Seg> buildSegments(List<Pt> sp) {
+        List<Seg> out  = new ArrayList<>();
+        BlockPos  last = null;
+        for (Pt p : sp) {
             BlockPos bp = new BlockPos(p.bx(), p.by(), p.bz());
             if (bp.equals(last)) continue;
-
             int dx = 0, dz = 0;
             if (last != null) {
-                dx = sign(bp.getX() - last.getX());
-                dz = sign(bp.getZ() - last.getZ());
+                dx = bp.getX() - last.getX();
+                dz = bp.getZ() - last.getZ();
+                if (dx != 0) dx = dx > 0 ? 1 : -1;
+                if (dz != 0) dz = dz > 0 ? 1 : -1;
             }
-            out.add(new Segment(bp.getX(), bp.getY(), bp.getZ(), dx, dz));
+            out.add(new Seg(bp.getX(), bp.getY(), bp.getZ(), dx, dz));
             last = bp;
         }
         return out;
     }
 
-    private void placeSegment(ChunkedBlockRegion region,
-                               Segment prev, Segment cur, Segment next,
-                               List<Segment> all, int idx,
-                               Set<BlockPos> centers) {
+    private void placeSegmentClassic(ChunkedBlockRegion region,
+                                      Seg cur, Seg prv, Seg nxt,
+                                      Set<BlockPos> centers) {
+        int cx = cur.cx(), cy = cur.cy(), cz = cur.cz();
 
+        int tx, tz;
+        if (prv != null && nxt != null) { tx = nxt.cx() - prv.cx(); tz = nxt.cz() - prv.cz(); }
+        else if (prv != null)           { tx = cx - prv.cx();        tz = cz - prv.cz(); }
+        else if (nxt != null)           { tx = nxt.cx() - cx;        tz = nxt.cz() - cz; }
+        else                            { tx = 1; tz = 0; }
+
+        Direction tang = cardinalFromVec(tx, tz);
+        region.addBlock(cx, cy, cz, makeCoral(tang));
+
+        int lx, lz, rx, rz;
+        switch (tang) {
+            case NORTH -> { lx = cx-1; lz = cz;   rx = cx+1; rz = cz;   }
+            case SOUTH -> { lx = cx+1; lz = cz;   rx = cx-1; rz = cz;   }
+            case EAST  -> { lx = cx;   lz = cz-1; rx = cx;   rz = cz+1; }
+            case WEST  -> { lx = cx;   lz = cz+1; rx = cx;   rz = cz-1; }
+            default    -> { lx = cx+1; lz = cz;   rx = cx-1; rz = cz;   }
+        }
+
+        int dx = cur.dx(), dz = cur.dz();
+        int ndx = nxt != null ? nxt.dx() : dx;
+        int ndz = nxt != null ? nxt.dz() : dz;
+
+        safePlace(region, lx, cy, lz, computeSideBlockClassic(tang, dx, dz, ndx, ndz, true),  centers);
+        safePlace(region, rx, cy, rz, computeSideBlockClassic(tang, dx, dz, ndx, ndz, false), centers);
+    }
+
+    private BlockState computeSideBlockClassic(Direction tang,
+                                                int dx, int dz, int ndx, int ndz,
+                                                boolean isLeft) {
+        Direction latCur = lateralComponent(dx,  dz,  tang);
+        Direction latNxt = lateralComponent(ndx, ndz, tang);
+
+        boolean curDiag = Math.abs(dx)  == 1 && Math.abs(dz)  == 1;
+        boolean nxtDiag = Math.abs(ndx) == 1 && Math.abs(ndz) == 1;
+
+        if (curDiag && nxtDiag && latCur == latNxt)
+            return diagWall(tang, dx, dz, isLeft);
+
+        Direction lat = latCur != null ? latCur : latNxt;
+        if (lat != null) return shelfFromDir(lat);
+
+        return (tang == Direction.NORTH || tang == Direction.SOUTH) ? WALL_NS : WALL_EW;
+    }
+
+    private BlockState diagWall(Direction tang, int dx, int dz, boolean isLeft) {
+        return switch (tang) {
+            case NORTH, SOUTH -> dx > 0
+                    ? (isLeft ? WALL_NE : WALL_SW)
+                    : (isLeft ? WALL_SE : WALL_NW);
+            case EAST, WEST -> dz > 0
+                    ? (isLeft ? WALL_NW : WALL_SE)
+                    : (isLeft ? WALL_SW : WALL_NE);
+            default -> WALL_NS;
+        };
+    }
+
+    private BlockState shelfFromDir(Direction dir) {
+        return switch (dir) {
+            case NORTH -> SHELF_N;
+            case SOUTH -> SHELF_S;
+            case EAST  -> SHELF_E;
+            default    -> SHELF_W;
+        };
+    }
+
+    private Direction lateralComponent(int dx, int dz, Direction tang) {
+        boolean ns = tang == Direction.NORTH || tang == Direction.SOUTH;
+        if (ns)  { return dx > 0 ? Direction.EAST  : dx < 0 ? Direction.WEST  : null; }
+        else     { return dz > 0 ? Direction.SOUTH : dz < 0 ? Direction.NORTH : null; }
+    }
+
+    private Direction cardinalFromVec(int tx, int tz) {
+        if (Math.abs(tx) >= Math.abs(tz)) return tx >= 0 ? Direction.EAST  : Direction.WEST;
+        else                              return tz >= 0 ? Direction.SOUTH : Direction.NORTH;
+    }
+
+    private void placeSegmentNatural(ChunkedBlockRegion region,
+                                      Seg cur, Seg prv, Seg nxt,
+                                      List<Seg> all, int idx,
+                                      Set<BlockPos> centers) {
         int cx = cur.cx(), cy = cur.cy(), cz = cur.cz();
 
         int tx = 0, tz = 0;
-        if (prev != null) { tx += cx - prev.cx(); tz += cz - prev.cz(); }
-        if (next != null) { tx += next.cx() - cx; tz += next.cz() - cz; }
+        if (prv != null) { tx += cx - prv.cx(); tz += cz - prv.cz(); }
+        if (nxt != null) { tx += nxt.cx() - cx; tz += nxt.cz() - cz; }
         if (tx == 0 && tz == 0) { tx = cur.dx(); tz = cur.dz(); }
 
         boolean axisNS = Math.abs(tz) >= Math.abs(tx);
         boolean rising = isRising(all, idx);
 
-        placeCenterAndTop(region, cx, cy, cz, axisNS, rising);
-        placeRails(region, cx, cy, cz, axisNS);
+        Direction facing = axisNS ? Direction.NORTH : Direction.EAST;
 
-        String d1 = neighborDir(prev, cx, cz);
-        String d2 = neighborDir(next, cx, cz);
+        if (!rising) {
+            region.addBlock(cx, cy,     cz, lectern(facing));
+            region.addBlock(cx, cy + 1, cz, Blocks.PALE_MOSS_CARPET.getDefaultState());
+        } else {
+            region.addBlock(cx, cy,     cz, Blocks.PALE_MOSS_BLOCK.getDefaultState());
+            region.addBlock(cx, cy + 1, cz, oakButton(facing));
+        }
+
+        BlockState gravel = Blocks.GRAVEL.getDefaultState();
+        if (axisNS) {
+            region.addBlock(cx + 1, cy, cz, gravel);
+            region.addBlock(cx - 1, cy, cz, gravel);
+        } else {
+            region.addBlock(cx, cy, cz + 1, gravel);
+            region.addBlock(cx, cy, cz - 1, gravel);
+        }
+
+        String d1 = neighborDir(prv, cx, cz);
+        String d2 = neighborDir(nxt, cx, cz);
 
         if (axisNS) {
             placeLeafNS(region, cx, cy, cz, d1, d2, centers);
@@ -263,35 +453,11 @@ public class RailPathTool implements Tool {
         }
     }
 
-    private boolean isRising(List<Segment> all, int idx) {
-        Segment cur = all.get(idx);
+    private boolean isRising(List<Seg> all, int idx) {
+        Seg cur = all.get(idx);
         if (idx > 0 && all.get(idx - 1).cy() == cur.cy() - 1) return true;
         if (idx < all.size() - 1 && all.get(idx + 1).cy() == cur.cy() - 1) return true;
         return false;
-    }
-
-    private void placeCenterAndTop(ChunkedBlockRegion region,
-                                    int cx, int cy, int cz,
-                                    boolean axisNS, boolean rising) {
-        Direction facing = axisNS ? Direction.NORTH : Direction.EAST;
-        if (!rising) {
-            region.addBlock(cx, cy,     cz, lectern(facing));
-            region.addBlock(cx, cy + 1, cz, Blocks.PALE_MOSS_CARPET.getDefaultState());
-        } else {
-            region.addBlock(cx, cy,     cz, Blocks.PALE_MOSS_BLOCK.getDefaultState());
-            region.addBlock(cx, cy + 1, cz, oakButton(facing));
-        }
-    }
-
-    private void placeRails(ChunkedBlockRegion region, int cx, int cy, int cz, boolean axisNS) {
-        BlockState gravel = Blocks.GRAVEL.getDefaultState();
-        if (axisNS) {
-            region.addBlock(cx + 1, cy, cz, gravel);
-            region.addBlock(cx - 1, cy, cz, gravel);
-        } else {
-            region.addBlock(cx, cy, cz + 1, gravel);
-            region.addBlock(cx, cy, cz - 1, gravel);
-        }
     }
 
     private void placeLeafNS(ChunkedBlockRegion region,
@@ -309,8 +475,8 @@ public class RailPathTool implements Tool {
         else if (pair(d1,d2,"NE","SO")) { eAmt=3; eFace="west";  wAmt=3; wFace="east";  }
         else if (pair(d1,d2,"NO","SE")) { eAmt=3; eFace="south"; wAmt=3; wFace="north"; }
 
-        safeAdd(region, cx + 1, cy + 1, cz, leafLitter(eAmt, eFace), centers);
-        safeAdd(region, cx - 1, cy + 1, cz, leafLitter(wAmt, wFace), centers);
+        safePlace(region, cx + 1, cy + 1, cz, leafLitter(eAmt, eFace), centers);
+        safePlace(region, cx - 1, cy + 1, cz, leafLitter(wAmt, wFace), centers);
     }
 
     private void placeLeafEW(ChunkedBlockRegion region,
@@ -328,8 +494,8 @@ public class RailPathTool implements Tool {
         else if (pair(d1,d2,"NE","SO")) { nAmt=3; nFace="east";  sAmt=3; sFace="west";  }
         else if (pair(d1,d2,"NO","SE")) { nAmt=3; nFace="south"; sAmt=3; sFace="north"; }
 
-        safeAdd(region, cx, cy + 1, cz - 1, leafLitter(nAmt, nFace), centers);
-        safeAdd(region, cx, cy + 1, cz + 1, leafLitter(sAmt, sFace), centers);
+        safePlace(region, cx, cy + 1, cz - 1, leafLitter(nAmt, nFace), centers);
+        safePlace(region, cx, cy + 1, cz + 1, leafLitter(sAmt, sFace), centers);
     }
 
     private void placeDiagonalJoints(ChunkedBlockRegion region,
@@ -345,7 +511,7 @@ public class RailPathTool implements Tool {
             } else {
                 face = ddz < 0 ? (ddx > 0 ? "north" : "south") : (ddx > 0 ? "east" : "west");
             }
-            int jx = axisNS ? cx      : cx + ddx;
+            int jx = axisNS ? cx       : cx + ddx;
             int jz = axisNS ? cz + ddz : cz;
             if (!centers.contains(new BlockPos(jx, cy, jz))) {
                 region.addBlock(jx, cy,     jz, Blocks.GRAVEL.getDefaultState());
@@ -354,7 +520,7 @@ public class RailPathTool implements Tool {
         }
     }
 
-    private static String neighborDir(Segment seg, int cx, int cz) {
+    private static String neighborDir(Seg seg, int cx, int cz) {
         if (seg == null) return "";
         int dx = sign(seg.cx() - cx);
         int dz = sign(seg.cz() - cz);
@@ -370,17 +536,18 @@ public class RailPathTool implements Tool {
 
     private static int sign(int v) { return v == 0 ? 0 : (v > 0 ? 1 : -1); }
 
-    private static void safeAdd(ChunkedBlockRegion region,
-                                 int x, int y, int z,
-                                 BlockState state,
-                                 Set<BlockPos> centers) {
-        if (!centers.contains(new BlockPos(x, y, z))) region.addBlock(x, y, z, state);
+    private static void safePlace(ChunkedBlockRegion region,
+                                   int x, int y, int z,
+                                   BlockState state,
+                                   Set<BlockPos> centers) {
+        if (!centers.contains(new BlockPos(x, y, z)))
+            region.addBlock(x, y, z, state);
     }
 
     private static BlockState lectern(Direction facing) {
         return Blocks.LECTERN.getDefaultState()
-            .with(Properties.HORIZONTAL_FACING, facing)
-            .with(LecternBlock.HAS_BOOK, false);
+                .with(Properties.HORIZONTAL_FACING, facing)
+                .with(LecternBlock.HAS_BOOK, false);
     }
 
     @SuppressWarnings({"unchecked", "rawtypes"})
@@ -395,9 +562,7 @@ public class RailPathTool implements Tool {
                     }
                 }
             } else if (prop.getName().equals("facing") && prop instanceof EnumProperty ep) {
-                if (ep.getValues().contains(facing)) {
-                    state = state.with(ep, facing);
-                }
+                if (ep.getValues().contains(facing)) state = state.with(ep, facing);
             } else if (prop.getName().equals("powered") && prop instanceof BooleanProperty bp) {
                 state = state.with(bp, true);
             }
@@ -414,7 +579,7 @@ public class RailPathTool implements Tool {
         };
 
         BlockState state = Blocks.LEAF_LITTER.getDefaultState()
-            .with(Properties.HORIZONTAL_FACING, dir);
+                .with(Properties.HORIZONTAL_FACING, dir);
 
         for (var prop : state.getProperties()) {
             if (prop.getName().equals("segment_amount") && prop instanceof IntProperty ip) {
@@ -427,13 +592,13 @@ public class RailPathTool implements Tool {
         return state;
     }
 
-    private List<SplinePoint> snapAllToGround(List<SplinePoint> pts) {
+    private List<Pt> snapAllToGround(List<Pt> pts) {
         ClientWorld world = MinecraftClient.getInstance().world;
         if (world == null) return pts;
-        List<SplinePoint> out = new ArrayList<>(pts.size());
-        for (SplinePoint p : pts) {
+        List<Pt> out = new ArrayList<>(pts.size());
+        for (Pt p : pts) {
             int sy = findSurface(world, p.bx(), p.by(), p.bz());
-            out.add(new SplinePoint(p.wx(), sy + 0.5, p.wz(), p.bx(), sy, p.bz()));
+            out.add(new Pt(p.x(), sy + 0.5, p.z(), p.bx(), sy, p.bz()));
         }
         return out;
     }
@@ -451,7 +616,7 @@ public class RailPathTool implements Tool {
         return startY;
     }
 
-    private List<SplinePoint> catmullRom(List<BlockPos> pts, int dens) {
+    private List<Pt> catmullRom(List<BlockPos> pts, int dens) {
         List<Vec3d> v = new ArrayList<>();
         for (BlockPos p : pts) v.add(Vec3d.ofCenter(p));
 
@@ -470,15 +635,15 @@ public class RailPathTool implements Tool {
         }
         raw.add(v.getLast());
 
-        List<SplinePoint> out  = new ArrayList<>();
-        BlockPos          last = null;
+        List<Pt>  out  = new ArrayList<>();
+        BlockPos  last = null;
         for (Vec3d q : raw) {
             int bx = (int) Math.floor(q.x);
             int by = (int) Math.floor(q.y);
             int bz = (int) Math.floor(q.z);
             BlockPos bp = new BlockPos(bx, by, bz);
             if (!bp.equals(last)) {
-                out.add(new SplinePoint(q.x, q.y, q.z, bx, by, bz));
+                out.add(new Pt(q.x, q.y, q.z, bx, by, bz));
                 last = bp;
             }
         }
@@ -488,10 +653,9 @@ public class RailPathTool implements Tool {
     private static Vec3d crEval(Vec3d p0, Vec3d p1, Vec3d p2, Vec3d p3, double t) {
         double t2 = t * t, t3 = t2 * t;
         return new Vec3d(
-            crComp(p0.x, p1.x, p2.x, p3.x, t, t2, t3),
-            crComp(p0.y, p1.y, p2.y, p3.y, t, t2, t3),
-            crComp(p0.z, p1.z, p2.z, p3.z, t, t2, t3)
-        );
+                crComp(p0.x, p1.x, p2.x, p3.x, t, t2, t3),
+                crComp(p0.y, p1.y, p2.y, p3.y, t, t2, t3),
+                crComp(p0.z, p1.z, p2.z, p3.z, t, t2, t3));
     }
 
     private static double crComp(double a, double b, double c, double d,
