@@ -8,12 +8,13 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 public class RailPathToolMod implements ClientModInitializer {
+
     public static final Logger LOGGER = LoggerFactory.getLogger("bte_railpathtool");
 
     @Override
     public void onInitializeClient() {
         if (!FabricLoader.getInstance().isModLoaded("axiom")) {
-            LOGGER.warn("[RailPath] Axiom non trouvé, le mod ne se chargera pas.");
+            LOGGER.warn("[RailPath] Axiom non trouvé – le mod ne se chargera pas.");
             return;
         }
         ToolManager.addTool(new RailPathTool());
