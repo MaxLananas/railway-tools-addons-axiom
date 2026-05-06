@@ -22,6 +22,46 @@ jobs:
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Fix resources folder name if needed
+        run: |
+          if [ -d "src/main/ressources" ] && [ ! -d "src/main/resources" ]; then
+            cp -r src/main/ressources src/main/resources
+          fi
+
+      - name: Auto-bump patch version
+        if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master')
+        run: |
+          CURRENT=$(grep "^mod_version" gradle.properties | cut -d'=' -f2 | tr -d ' \r\n')
+          MAJOR=$(echo "$CURRENT" | cut -d'.' -f1)
+          MINOR=$(echo "$CURRENT" | cut -d'.' -f2)
+          PATCH=$(echo "$CURRENT" | cut -d'.' -f3)
+          MC_VERSION=$(grep "^minecraft_version" gradle.properties | cut -d'=' -f2 | tr -d ' \r\n')
+          NEW_PATCH=$((PATCH + 1))
+          NEW_VERSION="${MAJOR}.${MINOR}.${NEW_PATCH}"
+          NEW_TAG="v${NEW_VERSION}-mc${MC_VERSION}"
+
+          while git ls-remote --tags origin "refs/tags/$NEW_TAG" | grep -q "$NEW_TAG"; do
+            NEW_PATCH=$((NEW_PATCH + 1))
+            NEW_VERSION="${MAJOR}.${MINOR}.${NEW_PATCH}"
+            NEW_TAG="v${NEW_VERSION}-mc${MC_VERSION}"
+          done
+
+          sed -i "s/^mod_version=.*/mod_version=${NEW_VERSION}/" gradle.properties
+          echo "NEW_VERSION=${NEW_VERSION}" >> "$GITHUB_ENV"
+          echo "Bumped version: ${CURRENT} -> ${NEW_VERSION}"
+
+      - name: Commit bumped version
+        if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master')
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          if ! git diff --quiet gradle.properties; then
+            git add gradle.properties
+            git commit -m "chore: bump version to ${NEW_VERSION} [skip ci]"
+            git push
+          fi
 
       - name: Setup JDK 21
         uses: actions/setup-java@v4
@@ -32,14 +72,13 @@ jobs:
       - name: Download Axiom dependency
         run: |
           mkdir -p libs
-          echo "Downloading Axiom jar..."
           curl -L \
             --retry 3 \
             --retry-delay 5 \
             --fail \
             -o "libs/${{ env.AXIOM_JAR }}" \
             "${{ env.AXIOM_URL }}"
-          echo "Downloaded $(du -sh libs/${{ env.AXIOM_JAR }} | cut -f1)"
+          echo "Axiom downloaded: $(du -sh libs/${{ env.AXIOM_JAR }} | cut -f1)"
 
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v4
@@ -55,22 +94,18 @@ jobs:
             --no-build-cache \
             --no-daemon \
             --parallel \
-            --warning-mode all \
-            --stacktrace
+            --warning-mode summary
         env:
-          GRADLE_OPTS: >-
-            -Dorg.gradle.daemon=false
-            -Xmx2G
-            -Xms512m
+          GRADLE_OPTS: "-Dorg.gradle.daemon=false -Xmx2G -Xms512m"
 
       - name: Get mod version
         id: version
         run: |
-          VERSION=$(grep "^mod_version" gradle.properties | cut -d'=' -f2 | tr -d ' \r\n')
+          VERSION=$(grep "^mod_version"      gradle.properties | cut -d'=' -f2 | tr -d ' \r\n')
           MC_VERSION=$(grep "^minecraft_version" gradle.properties | cut -d'=' -f2 | tr -d ' \r\n')
-          echo "version=${VERSION}"           >> "$GITHUB_OUTPUT"
-          echo "mc_version=${MC_VERSION}"     >> "$GITHUB_OUTPUT"
-          echo "tag=v${VERSION}-mc${MC_VERSION}" >> "$GITHUB_OUTPUT"
+          echo "version=${VERSION}"               >> "$GITHUB_OUTPUT"
+          echo "mc_version=${MC_VERSION}"         >> "$GITHUB_OUTPUT"
+          echo "tag=v${VERSION}-mc${MC_VERSION}"  >> "$GITHUB_OUTPUT"
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
@@ -84,9 +119,7 @@ jobs:
 
       - name: Check if tag exists
         id: tag_check
-        if: >
-          github.event_name == 'push' &&
-          (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master')
+        if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master')
         run: |
           TAG="${{ steps.version.outputs.tag }}"
           if git ls-remote --tags origin "refs/tags/$TAG" | grep -q "$TAG"; then
@@ -105,17 +138,16 @@ jobs:
           tag_name: ${{ steps.version.outputs.tag }}
           name: "BTE Rail Path Tool ${{ steps.version.outputs.version }} — MC ${{ steps.version.outputs.mc_version }}"
           body: |
-            ## 🚂 BTE Rail Path Tool `${{ steps.version.outputs.version }}`
+            ## Railway Tools for Axiom `${{ steps.version.outputs.version }}`
 
             **Minecraft** : `${{ steps.version.outputs.mc_version }}`
-            **Requires** : [Axiom](https://modrinth.com/mod/axiom)
+            **Requires** : Axiom
 
-            ### 📦 Installation
-            Place le fichier `.jar` dans ton dossier `mods/`.
-            > ⚠️ Ne pas utiliser le fichier `-sources.jar`.
+            ### Installation
+            Place the `.jar` file in your `mods/` folder.
 
             ---
-            *Build automatique — GitHub Actions*
+            *Automated build via GitHub Actions*
           files: |
             build/libs/*.jar
           draft: false
