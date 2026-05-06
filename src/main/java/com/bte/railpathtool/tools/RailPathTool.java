@@ -12,20 +12,19 @@ import com.moulberry.axiom.restrictions.AxiomPermission;
 import com.moulberry.axiom.tools.Tool;
 import com.moulberry.axiom.utils.RegionHelper;
 import imgui.ImGui;
-import net.minecraft.block.Block;
 import net.minecraft.block.BlockState;
 import net.minecraft.block.Blocks;
 import net.minecraft.block.LecternBlock;
-import net.minecraft.block.enums.Attachment;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.render.Camera;
 import net.minecraft.client.render.VertexFormats;
 import net.minecraft.client.util.math.MatrixStack;
 import net.minecraft.client.world.ClientWorld;
 import net.minecraft.nbt.NbtCompound;
+import net.minecraft.state.property.BooleanProperty;
+import net.minecraft.state.property.EnumProperty;
 import net.minecraft.state.property.IntProperty;
 import net.minecraft.state.property.Properties;
-import net.minecraft.state.property.Property;
 import net.minecraft.util.math.BlockPos;
 import net.minecraft.util.math.Direction;
 import net.minecraft.util.math.Vec3d;
@@ -42,9 +41,9 @@ public class RailPathTool implements Tool {
     private final ChunkedBlockRegion preview = new ChunkedBlockRegion();
     private boolean dirty = true;
 
-    private final int[]     density       = {10};
-    private final boolean[] snapToGround  = {false};
-    private final boolean[] showPreview   = {true};
+    private final int[]     density      = {10};
+    private final boolean[] snapToGround = {false};
+    private final boolean[] showPreview  = {true};
 
     @Override public String  name()           { return "BTE Rail Path"; }
     @Override public char    iconChar()       { return '\ue912'; }
@@ -60,9 +59,9 @@ public class RailPathTool implements Tool {
 
     @Override
     public void writeSettings(NbtCompound tag) {
-        tag.putInt("density",      density[0]);
-        tag.putBoolean("snap",     snapToGround[0]);
-        tag.putBoolean("preview",  showPreview[0]);
+        tag.putInt("density",     density[0]);
+        tag.putBoolean("snap",    snapToGround[0]);
+        tag.putBoolean("preview", showPreview[0]);
     }
 
     @Override
@@ -101,7 +100,6 @@ public class RailPathTool implements Tool {
 
         var buffer = provider.begin(VertexFormat.DrawMode.LINES, VertexFormats.POSITION_COLOR_NORMAL);
         var pose   = matrices.peek();
-
         for (int i = 0; i < points.size() - 1; i++) {
             Shapes.line(buffer, pose,
                 Vec3d.ofCenter(points.get(i)),
@@ -195,7 +193,6 @@ public class RailPathTool implements Tool {
     }
 
     private record SplinePoint(double wx, double wy, double wz, int bx, int by, int bz) {}
-
     private record Segment(int cx, int cy, int cz, int dx, int dz) {}
 
     private void buildRail(ChunkedBlockRegion region) {
@@ -277,10 +274,9 @@ public class RailPathTool implements Tool {
                                     int cx, int cy, int cz,
                                     boolean axisNS, boolean rising) {
         Direction facing = axisNS ? Direction.NORTH : Direction.EAST;
-
         if (!rising) {
             region.addBlock(cx, cy,     cz, lectern(facing));
-            region.addBlock(cx, cy + 1, cz, paleMossCarpet());
+            region.addBlock(cx, cy + 1, cz, Blocks.PALE_MOSS_CARPET.getDefaultState());
         } else {
             region.addBlock(cx, cy,     cz, Blocks.PALE_MOSS_BLOCK.getDefaultState());
             region.addBlock(cx, cy + 1, cz, oakButton(facing));
@@ -302,17 +298,16 @@ public class RailPathTool implements Tool {
                               int cx, int cy, int cz,
                               String d1, String d2,
                               Set<BlockPos> centers) {
-
         int eAmt = LEAF_STRAIGHT; String eFace = "north";
         int wAmt = LEAF_STRAIGHT; String wFace = "south";
 
-        if      (pair(d1, d2, "N",  "S" )) { eAmt=2; eFace="north"; wAmt=2; wFace="south"; }
-        else if (pair(d1, d2, "N",  "SE")) { eAmt=3; eFace="south"; wAmt=2; wFace="south"; }
-        else if (pair(d1, d2, "N",  "SO")) { eAmt=2; eFace="north"; wAmt=3; wFace="east";  }
-        else if (pair(d1, d2, "S",  "NE")) { eAmt=3; eFace="west";  wAmt=2; wFace="south"; }
-        else if (pair(d1, d2, "S",  "NO")) { eAmt=2; eFace="north"; wAmt=3; wFace="north"; }
-        else if (pair(d1, d2, "NE", "SO")) { eAmt=3; eFace="west";  wAmt=3; wFace="east";  }
-        else if (pair(d1, d2, "NO", "SE")) { eAmt=3; eFace="south"; wAmt=3; wFace="north"; }
+        if      (pair(d1,d2,"N","S"))   { eAmt=2; eFace="north"; wAmt=2; wFace="south"; }
+        else if (pair(d1,d2,"N","SE"))  { eAmt=3; eFace="south"; wAmt=2; wFace="south"; }
+        else if (pair(d1,d2,"N","SO"))  { eAmt=2; eFace="north"; wAmt=3; wFace="east";  }
+        else if (pair(d1,d2,"S","NE"))  { eAmt=3; eFace="west";  wAmt=2; wFace="south"; }
+        else if (pair(d1,d2,"S","NO"))  { eAmt=2; eFace="north"; wAmt=3; wFace="north"; }
+        else if (pair(d1,d2,"NE","SO")) { eAmt=3; eFace="west";  wAmt=3; wFace="east";  }
+        else if (pair(d1,d2,"NO","SE")) { eAmt=3; eFace="south"; wAmt=3; wFace="north"; }
 
         safeAdd(region, cx + 1, cy + 1, cz, leafLitter(eAmt, eFace), centers);
         safeAdd(region, cx - 1, cy + 1, cz, leafLitter(wAmt, wFace), centers);
@@ -322,17 +317,16 @@ public class RailPathTool implements Tool {
                               int cx, int cy, int cz,
                               String d1, String d2,
                               Set<BlockPos> centers) {
-
         int nAmt = LEAF_STRAIGHT; String nFace = "west";
         int sAmt = LEAF_STRAIGHT; String sFace = "east";
 
-        if      (pair(d1, d2, "O",  "E" )) { nAmt=2; nFace="west";  sAmt=2; sFace="east";  }
-        else if (pair(d1, d2, "E",  "NO")) { nAmt=3; nFace="south"; sAmt=2; sFace="east";  }
-        else if (pair(d1, d2, "O",  "NE")) { nAmt=3; nFace="east";  sAmt=2; sFace="east";  }
-        else if (pair(d1, d2, "O",  "SE")) { nAmt=2; nFace="west";  sAmt=3; sFace="north"; }
-        else if (pair(d1, d2, "E",  "SO")) { nAmt=2; nFace="west";  sAmt=3; sFace="west";  }
-        else if (pair(d1, d2, "NE", "SO")) { nAmt=3; nFace="east";  sAmt=3; sFace="west";  }
-        else if (pair(d1, d2, "NO", "SE")) { nAmt=3; nFace="south"; sAmt=3; sFace="north"; }
+        if      (pair(d1,d2,"O","E"))   { nAmt=2; nFace="west";  sAmt=2; sFace="east";  }
+        else if (pair(d1,d2,"E","NO"))  { nAmt=3; nFace="south"; sAmt=2; sFace="east";  }
+        else if (pair(d1,d2,"O","NE"))  { nAmt=3; nFace="east";  sAmt=2; sFace="east";  }
+        else if (pair(d1,d2,"O","SE"))  { nAmt=2; nFace="west";  sAmt=3; sFace="north"; }
+        else if (pair(d1,d2,"E","SO"))  { nAmt=2; nFace="west";  sAmt=3; sFace="west";  }
+        else if (pair(d1,d2,"NE","SO")) { nAmt=3; nFace="east";  sAmt=3; sFace="west";  }
+        else if (pair(d1,d2,"NO","SE")) { nAmt=3; nFace="south"; sAmt=3; sFace="north"; }
 
         safeAdd(region, cx, cy + 1, cz - 1, leafLitter(nAmt, nFace), centers);
         safeAdd(region, cx, cy + 1, cz + 1, leafLitter(sAmt, sFace), centers);
@@ -342,23 +336,17 @@ public class RailPathTool implements Tool {
                                       int cx, int cy, int cz,
                                       boolean axisNS,
                                       Set<BlockPos> centers) {
-        int[][] offsets = {{1, -1}, {-1, -1}, {1, 1}, {-1, 1}};
-
+        int[][] offsets = {{1,-1},{-1,-1},{1,1},{-1,1}};
         for (int[] off : offsets) {
             int ddx = off[0], ddz = off[1];
-
             String face;
             if (axisNS) {
-                face = ddx > 0 ? (ddz < 0 ? "east"  : "north")
-                               : (ddz < 0 ? "south" : "west");
+                face = ddx > 0 ? (ddz < 0 ? "east" : "north") : (ddz < 0 ? "south" : "west");
             } else {
-                face = ddz < 0 ? (ddx > 0 ? "north" : "south")
-                               : (ddx > 0 ? "east"  : "west");
+                face = ddz < 0 ? (ddx > 0 ? "north" : "south") : (ddx > 0 ? "east" : "west");
             }
-
-            int jx = axisNS ? cx     : cx + ddx;
+            int jx = axisNS ? cx      : cx + ddx;
             int jz = axisNS ? cz + ddz : cz;
-
             if (!centers.contains(new BlockPos(jx, cy, jz))) {
                 region.addBlock(jx, cy,     jz, Blocks.GRAVEL.getDefaultState());
                 region.addBlock(jx, cy + 1, jz, leafLitter(LEAF_DIAGONAL, face));
@@ -380,9 +368,7 @@ public class RailPathTool implements Tool {
         return (a.equals(x) && b.equals(y)) || (a.equals(y) && b.equals(x));
     }
 
-    private static int sign(int v) {
-        return v == 0 ? 0 : (v > 0 ? 1 : -1);
-    }
+    private static int sign(int v) { return v == 0 ? 0 : (v > 0 ? 1 : -1); }
 
     private static void safeAdd(ChunkedBlockRegion region,
                                  int x, int y, int z,
@@ -397,15 +383,26 @@ public class RailPathTool implements Tool {
             .with(LecternBlock.HAS_BOOK, false);
     }
 
-    private static BlockState paleMossCarpet() {
-        return Blocks.PALE_MOSS_CARPET.getDefaultState();
-    }
-
+    @SuppressWarnings({"unchecked", "rawtypes"})
     private static BlockState oakButton(Direction facing) {
-        return Blocks.OAK_BUTTON.getDefaultState()
-            .with(Properties.HORIZONTAL_FACING, facing)
-            .with(Properties.ATTACHMENT_TYPE, Attachment.FLOOR)
-            .with(Properties.POWERED, true);
+        BlockState state = Blocks.OAK_BUTTON.getDefaultState();
+        for (var prop : state.getProperties()) {
+            if (prop.getName().equals("face") && prop instanceof EnumProperty ep) {
+                for (Object val : ep.getValues()) {
+                    if (val.toString().equalsIgnoreCase("floor")) {
+                        state = state.with(ep, (Comparable) val);
+                        break;
+                    }
+                }
+            } else if (prop.getName().equals("facing") && prop instanceof EnumProperty ep) {
+                if (ep.getValues().contains(facing)) {
+                    state = state.with(ep, facing);
+                }
+            } else if (prop.getName().equals("powered") && prop instanceof BooleanProperty bp) {
+                state = state.with(bp, true);
+            }
+        }
+        return state;
     }
 
     private static BlockState leafLitter(int amount, String facing) {
@@ -419,27 +416,26 @@ public class RailPathTool implements Tool {
         BlockState state = Blocks.LEAF_LITTER.getDefaultState()
             .with(Properties.HORIZONTAL_FACING, dir);
 
-        for (Property<?> prop : state.getProperties()) {
+        for (var prop : state.getProperties()) {
             if (prop.getName().equals("segment_amount") && prop instanceof IntProperty ip) {
-                int clamped = Math.max(ip.getMin(), Math.min(ip.getMax(), amount));
-                state = state.with(ip, clamped);
+                int min = ip.getValues().stream().mapToInt(Integer::intValue).min().orElse(1);
+                int max = ip.getValues().stream().mapToInt(Integer::intValue).max().orElse(4);
+                state = state.with(ip, Math.max(min, Math.min(max, amount)));
                 break;
             }
         }
-
         return state;
     }
 
     private List<SplinePoint> snapAllToGround(List<SplinePoint> pts) {
         ClientWorld world = MinecraftClient.getInstance().world;
         if (world == null) return pts;
-
-        List<SplinePoint> snapped = new ArrayList<>(pts.size());
+        List<SplinePoint> out = new ArrayList<>(pts.size());
         for (SplinePoint p : pts) {
             int sy = findSurface(world, p.bx(), p.by(), p.bz());
-            snapped.add(new SplinePoint(p.wx(), sy + 0.5, p.wz(), p.bx(), sy, p.bz()));
+            out.add(new SplinePoint(p.wx(), sy + 0.5, p.wz(), p.bx(), sy, p.bz()));
         }
-        return snapped;
+        return out;
     }
 
     private static int findSurface(ClientWorld world, int x, int startY, int z) {
@@ -455,31 +451,27 @@ public class RailPathTool implements Tool {
         return startY;
     }
 
-    private List<SplinePoint> catmullRom(List<BlockPos> pts, int density) {
+    private List<SplinePoint> catmullRom(List<BlockPos> pts, int dens) {
         List<Vec3d> v = new ArrayList<>();
         for (BlockPos p : pts) v.add(Vec3d.ofCenter(p));
 
-        List<Vec3d> extended = new ArrayList<>();
-        extended.add(v.get(0).add(v.get(0).subtract(v.get(1))));
-        extended.addAll(v);
-        extended.add(v.getLast().add(v.getLast().subtract(v.get(v.size() - 2))));
+        List<Vec3d> ext = new ArrayList<>();
+        ext.add(v.get(0).add(v.get(0).subtract(v.get(1))));
+        ext.addAll(v);
+        ext.add(v.getLast().add(v.getLast().subtract(v.get(v.size() - 2))));
 
         List<Vec3d> raw = new ArrayList<>();
-        for (int i = 1; i < extended.size() - 2; i++) {
-            Vec3d p0 = extended.get(i - 1);
-            Vec3d p1 = extended.get(i);
-            Vec3d p2 = extended.get(i + 1);
-            Vec3d p3 = extended.get(i + 2);
-            int steps = Math.max(1, (int) Math.ceil(p1.distanceTo(p2) * density));
-            for (int s = 0; s < steps; s++) {
+        for (int i = 1; i < ext.size() - 2; i++) {
+            Vec3d p0 = ext.get(i-1), p1 = ext.get(i),
+                  p2 = ext.get(i+1), p3 = ext.get(i+2);
+            int steps = Math.max(1, (int) Math.ceil(p1.distanceTo(p2) * dens));
+            for (int s = 0; s < steps; s++)
                 raw.add(crEval(p0, p1, p2, p3, (double) s / steps));
-            }
         }
         raw.add(v.getLast());
 
         List<SplinePoint> out  = new ArrayList<>();
         BlockPos          last = null;
-
         for (Vec3d q : raw) {
             int bx = (int) Math.floor(q.x);
             int by = (int) Math.floor(q.y);
@@ -490,13 +482,11 @@ public class RailPathTool implements Tool {
                 last = bp;
             }
         }
-
         return out;
     }
 
     private static Vec3d crEval(Vec3d p0, Vec3d p1, Vec3d p2, Vec3d p3, double t) {
-        double t2 = t * t;
-        double t3 = t2 * t;
+        double t2 = t * t, t3 = t2 * t;
         return new Vec3d(
             crComp(p0.x, p1.x, p2.x, p3.x, t, t2, t3),
             crComp(p0.y, p1.y, p2.y, p3.y, t, t2, t3),
@@ -506,6 +496,6 @@ public class RailPathTool implements Tool {
 
     private static double crComp(double a, double b, double c, double d,
                                   double t, double t2, double t3) {
-        return 0.5 * (2*b + (-a + c)*t + (2*a - 5*b + 4*c - d)*t2 + (-a + 3*b - 3*c + d)*t3);
+        return 0.5 * (2*b + (-a+c)*t + (2*a-5*b+4*c-d)*t2 + (-a+3*b-3*c+d)*t3);
     }
 }
