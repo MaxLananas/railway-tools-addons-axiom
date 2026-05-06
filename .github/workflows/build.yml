@@ -6,6 +6,9 @@ on:
   pull_request:
     branches: [ main, master ]
 
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
 jobs:
   build:
     runs-on: ubuntu-24.04
@@ -13,7 +16,7 @@ jobs:
       contents: write
 
     steps:
-      - name: Checkout repository
+      - name: Checkout
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
@@ -22,57 +25,61 @@ jobs:
         uses: actions/setup-java@v4
         with:
           java-version: '21'
-          distribution: 'microsoft'
+          distribution: 'temurin'
 
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v4
         with:
-          gradle-version: '9.2.1'
+          cache-read-only: false
+          cache-cleanup: on-success
 
-      - name: Cache Gradle packages
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.gradle/caches
-            ~/.gradle/wrapper
-            ~/.gradle/loom-cache
-          key: ${{ runner.os }}-gradle-${{ hashFiles('**/*.gradle*', '**/gradle-wrapper.properties', '**/gradle.properties') }}
-          restore-keys: |
-            ${{ runner.os }}-gradle-
+      - name: Make gradlew executable
+        run: chmod +x ./gradlew
+
+      - name: Clean Loom cache if corrupted
+        run: |
+          LOCK_FILE="$HOME/.gradle/caches/fabric-loom"
+          if find "$LOCK_FILE" -name "*.lock" 2>/dev/null | grep -q .; then
+            echo "Lock files found, cleaning Loom cache..."
+            rm -rf "$LOCK_FILE"
+          fi
 
       - name: Build
-        run: gradle build --build-cache --parallel --configure-on-demand
+        run: ./gradlew build --build-cache --parallel --warning-mode all
         env:
-          GRADLE_OPTS: "-Dorg.gradle.daemon=false -Dorg.gradle.parallel=true -Dorg.gradle.caching=true"
+          GRADLE_OPTS: "-Dorg.gradle.daemon=false"
 
       - name: Get mod version
         id: version
         run: |
           VERSION=$(grep "^mod_version" gradle.properties | cut -d'=' -f2 | tr -d ' \r\n')
           MC_VERSION=$(grep "^minecraft_version" gradle.properties | cut -d'=' -f2 | tr -d ' \r\n')
-          echo "version=${VERSION}" >> $GITHUB_OUTPUT
-          echo "mc_version=${MC_VERSION}" >> $GITHUB_OUTPUT
-          echo "tag=v${VERSION}-mc${MC_VERSION}" >> $GITHUB_OUTPUT
+          echo "version=${VERSION}"     >> "$GITHUB_OUTPUT"
+          echo "mc_version=${MC_VERSION}" >> "$GITHUB_OUTPUT"
+          echo "tag=v${VERSION}-mc${MC_VERSION}" >> "$GITHUB_OUTPUT"
 
-      - name: Upload build artifacts
+      - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: now-playing-irl-${{ steps.version.outputs.tag }}
-          path: build/libs/*.jar
+          name: rail-path-tool-${{ steps.version.outputs.tag }}
+          path: |
+            build/libs/*.jar
+            !build/libs/*-dev.jar
+            !build/libs/*-sources.jar
           if-no-files-found: error
 
-      - name: Check if tag already exists
+      - name: Check if tag exists
         id: tag_check
         if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master')
         run: |
           TAG="${{ steps.version.outputs.tag }}"
-          if git ls-remote --tags origin | grep -q "refs/tags/$TAG$"; then
-            echo "exists=true" >> $GITHUB_OUTPUT
+          if git ls-remote --tags origin "refs/tags/$TAG" | grep -q "$TAG"; then
+            echo "exists=true"  >> "$GITHUB_OUTPUT"
           else
-            echo "exists=false" >> $GITHUB_OUTPUT
+            echo "exists=false" >> "$GITHUB_OUTPUT"
           fi
 
-      - name: Create GitHub Release
+      - name: Create Release
         if: |
           github.event_name == 'push' &&
           (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master') &&
@@ -80,20 +87,24 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ steps.version.outputs.tag }}
-          name: "Now Playing IRL ${{ steps.version.outputs.version }} for MC ${{ steps.version.outputs.mc_version }}"
+          name: "BTE Rail Path Tool ${{ steps.version.outputs.version }} — MC ${{ steps.version.outputs.mc_version }}"
           body: |
-            ## 🎵 Now Playing IRL `${{ steps.version.outputs.version }}`
+            ## 🚂 BTE Rail Path Tool `${{ steps.version.outputs.version }}`
+
             **Minecraft** : `${{ steps.version.outputs.mc_version }}`
+            **Requires** : [Axiom](https://modrinth.com/mod/axiom)
 
             ### 📦 Installation
-            Télécharge le fichier `.jar` ci-dessous et place-le dans ton dossier `mods/`.
-
-            > ⚠️ Ne pas utiliser le fichier `-sources.jar`, il est réservé aux développeurs.
+            Place le fichier `.jar` dans ton dossier `mods/`.
+            > ⚠️ Ne pas utiliser le fichier `-sources.jar`.
 
             ---
-            *Build automatique via GitHub Actions*
+            *Build automatique — GitHub Actions*
           files: |
             build/libs/*.jar
+          exclude_assets: |
+            build/libs/*-dev.jar
+            build/libs/*-sources.jar
           draft: false
           prerelease: false
           make_latest: true
