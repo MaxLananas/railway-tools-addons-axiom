@@ -1,0 +1,13 @@
+{
+  "bte_railpathtool.tool.name": "Rail Path Tool",
+  "bte_railpathtool.tool.segment_length": "Segment Length",
+  "bte_railpathtool.tool.track_width": "Track Width",
+  "bte_railpathtool.tool.curve_threshold": "Curve Threshold (°)",
+  "bte_railpathtool.tool.points": "Control Points",
+  "bte_railpathtool.tool.add_point": "Add Point (Right Click)",
+  "bte_railpathtool.tool.confirm": "Confirm (Enter)",
+  "bte_railpathtool.tool.delete": "Delete Last Point (Del)",
+  "bte_railpathtool.tool.cancel": "Cancel",
+  "bte_railpathtool.tool.no_points": "No points placed",
+  "bte_railpathtool.tool.points_count": "%d point(s)"
+}
