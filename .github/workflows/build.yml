@@ -36,16 +36,21 @@ jobs:
       - name: Make gradlew executable
         run: chmod +x ./gradlew
 
-      - name: Clean Loom cache if corrupted
+      - name: Purge corrupted Loom cache
         run: |
-          LOCK_FILE="$HOME/.gradle/caches/fabric-loom"
-          if find "$LOCK_FILE" -name "*.lock" 2>/dev/null | grep -q .; then
-            echo "Lock files found, cleaning Loom cache..."
-            rm -rf "$LOCK_FILE"
+          LOOM_DIR="$HOME/.gradle/caches/fabric-loom"
+          if [ -d "$LOOM_DIR" ]; then
+            echo "Wiping Loom cache at $LOOM_DIR"
+            rm -rf "$LOOM_DIR"
+          fi
+          MINECRAFT_DIR="$HOME/.gradle/caches/minecraft"
+          if [ -d "$MINECRAFT_DIR" ]; then
+            echo "Wiping Minecraft cache at $MINECRAFT_DIR"
+            rm -rf "$MINECRAFT_DIR"
           fi
 
       - name: Build
-        run: ./gradlew build --build-cache --parallel --warning-mode all
+        run: ./gradlew build --build-cache --parallel --warning-mode all --info 2>&1 | tail -100
         env:
           GRADLE_OPTS: "-Dorg.gradle.daemon=false"
 
@@ -54,7 +59,7 @@ jobs:
         run: |
           VERSION=$(grep "^mod_version" gradle.properties | cut -d'=' -f2 | tr -d ' \r\n')
           MC_VERSION=$(grep "^minecraft_version" gradle.properties | cut -d'=' -f2 | tr -d ' \r\n')
-          echo "version=${VERSION}"     >> "$GITHUB_OUTPUT"
+          echo "version=${VERSION}"       >> "$GITHUB_OUTPUT"
           echo "mc_version=${MC_VERSION}" >> "$GITHUB_OUTPUT"
           echo "tag=v${VERSION}-mc${MC_VERSION}" >> "$GITHUB_OUTPUT"
 
@@ -100,8 +105,7 @@ jobs:
 
             ---
             *Build automatique — GitHub Actions*
-          files: |
-            build/libs/*.jar
+          files: build/libs/*.jar
           exclude_assets: |
             build/libs/*-dev.jar
             build/libs/*-sources.jar
