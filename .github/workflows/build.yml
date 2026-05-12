@@ -8,8 +8,8 @@ on:
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
-  AXIOM_JAR: Axiom-5.3.0-for-MC1.21.10.jar
-  AXIOM_URL: https://github.com/MaxLananas/railway-tools-addons-axiom/releases/download/deps/Axiom-5.3.0-for-MC1.21.10.jar
+  AXIOM_JAR: Axiom-5.4.1-for-MC1.21.10.jar
+  AXIOM_URL: https://github.com/MaxLananas/railway-tools-addons-axiom/releases/download/deps/Axiom-5.4.1-for-MC1.21.10.jar
 
 jobs:
   build:
