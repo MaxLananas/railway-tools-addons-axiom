@@ -14,10 +14,10 @@ public class RailPathToolMod implements ClientModInitializer {
     @Override
     public void onInitializeClient() {
         if (!FabricLoader.getInstance().isModLoaded("axiom")) {
-            LOGGER.warn("[RailPath] Axiom introuvable — le mod est désactivé.");
+            LOGGER.warn("[RailPath] Axiom introuvable — le mod est desactive.");
             return;
         }
         ToolManager.addTool(new RailPathTool());
-        LOGGER.info("[RailPath] Chargé avec succès.");
+        LOGGER.info("[RailPath] Charge avec succes.");
     }
 }
