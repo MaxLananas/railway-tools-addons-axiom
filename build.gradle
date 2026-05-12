@@ -20,7 +20,7 @@ dependencies {
     mappings           "net.fabricmc:yarn:${yarn_mappings}:v2"
     modImplementation  "net.fabricmc:fabric-loader:${loader_version}"
     modImplementation  "net.fabricmc.fabric-api:fabric-api:${fabric_api_version}"
-    modCompileOnly     files('libs/Axiom-5.3.0-for-MC1.21.10.jar')
+    modCompileOnly     files('libs/Axiom-5.4.1-for-MC1.21.10.jar')
 }
 
 java {
