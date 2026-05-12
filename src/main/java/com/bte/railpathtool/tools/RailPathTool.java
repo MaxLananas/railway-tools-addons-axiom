@@ -172,8 +172,9 @@ public class RailPathTool implements Tool {
     }
 
     private void renderControlLines(AxiomWorldRenderContext ctx) {
-        MatrixStack matrices = ctx.matrixStack();
-        var camera = ctx.camera();
+        MinecraftClient mc = MinecraftClient.getInstance();
+        var camera = mc.gameRenderer.getCamera();
+        MatrixStack matrices = new MatrixStack();
 
         var vcp = VertexConsumerProvider.shared();
         matrices.push();
@@ -196,39 +197,30 @@ public class RailPathTool implements Tool {
     @Override
     public void displayImguiOptions() {
         ImGuiHelper.separatorWithText("BTE Rail Path Tool");
-        ImGuiHelper.text("Points : " + points.size());
-        ImGuiHelper.separator();
+        ImGuiHelper.label("Points : " + points.size());
 
         boolean changed = false;
 
-        if (ImGuiHelper.sliderInt("Densite (pts/bloc)", density, 2, 32)) changed = true;
+        if (ImGuiHelper.sliderInt("Densite", density, 2, 32)) changed = true;
 
-        if (ImGuiHelper.checkbox("Coller au sol", snapToGround)) {
-            changed = true;
-        }
+        if (ImGuiHelper.checkbox("Coller au sol", snapToGround)) changed = true;
         ImGuiHelper.sameLine();
         ImGuiHelper.checkbox("Apercu", showPreview);
 
-        ImGuiHelper.separator();
-        ImGuiHelper.separatorWithText("Style de rail");
-
+        ImGuiHelper.separatorWithText("Style");
         for (int i = 0; i < STYLE_LABELS.length; i++) {
             if (i > 0) ImGuiHelper.sameLine();
-            if (ImGuiHelper.radioButton(STYLE_LABELS[i], styleIndex[0] == i)) {
-                styleIndex[0] = i;
-                changed = true;
-            }
+            if (ImGuiHelper.radioButton(STYLE_LABELS[i], styleIndex, i)) changed = true;
         }
 
-        String desc = switch (currentStyle()) {
-            case CLASSIC -> "Corail + murs en brique de boue + etageres";
-            case NATURAL -> "Pupitre + gravier + litiere de feuilles";
-        };
-        ImGuiHelper.textDisabled(desc);
+        ImGuiHelper.label(switch (currentStyle()) {
+            case CLASSIC -> "Corail + murs + etageres";
+            case NATURAL -> "Pupitre + gravier + feuilles";
+        });
 
         if (changed) dirty = true;
 
-        ImGuiHelper.separator();
+        ImGuiHelper.separatorWithText("Actions");
         if (points.size() >= 2 && ImGuiHelper.button("Valider")) confirm();
         if (!points.isEmpty()) {
             if (ImGuiHelper.button("Annuler dernier")) {
@@ -238,8 +230,7 @@ public class RailPathTool implements Tool {
             ImGuiHelper.sameLine();
             if (ImGuiHelper.button("Reinitialiser")) reset();
         }
-        ImGuiHelper.separator();
-        ImGuiHelper.textDisabled("Clic droit: point | Entree: valider | Suppr: annuler");
+        ImGuiHelper.label("Clic droit: point | Entree: valider | Suppr: annuler");
     }
 
     @Override
@@ -398,8 +389,8 @@ public class RailPathTool implements Tool {
 
     private Direction lateralComponent(int dx, int dz, Direction tang) {
         boolean ns = tang == Direction.NORTH || tang == Direction.SOUTH;
-        if (ns)  { return dx > 0 ? Direction.EAST  : dx < 0 ? Direction.WEST  : null; }
-        else     { return dz > 0 ? Direction.SOUTH : dz < 0 ? Direction.NORTH : null; }
+        if (ns) { return dx > 0 ? Direction.EAST  : dx < 0 ? Direction.WEST  : null; }
+        else    { return dz > 0 ? Direction.SOUTH : dz < 0 ? Direction.NORTH : null; }
     }
 
     private Direction cardinalFromVec(int tx, int tz) {
@@ -634,8 +625,8 @@ public class RailPathTool implements Tool {
         }
         raw.add(v.getLast());
 
-        List<Pt>  out  = new ArrayList<>();
-        BlockPos  last = null;
+        List<Pt> out  = new ArrayList<>();
+        BlockPos last = null;
         for (Vec3d q : raw) {
             int bx = (int) Math.floor(q.x);
             int by = (int) Math.floor(q.y);
