@@ -12,7 +12,6 @@ import com.moulberry.axiom.render.regions.ChunkedBlockRegion;
 import com.moulberry.axiom.restrictions.AxiomPermission;
 import com.moulberry.axiom.tools.Tool;
 import com.moulberry.axiom.utils.RegionHelper;
-import imgui.ImGui;
 import net.minecraft.block.BlockState;
 import net.minecraft.block.Blocks;
 import net.minecraft.block.LecternBlock;
@@ -33,6 +32,7 @@ import net.minecraft.util.math.BlockPos;
 import net.minecraft.util.math.Direction;
 import net.minecraft.util.math.Vec3d;
 
+import java.lang.reflect.Method;
 import java.util.*;
 
 public class RailPathTool implements Tool {
@@ -40,6 +40,55 @@ public class RailPathTool implements Tool {
     private enum RailStyle { CLASSIC, NATURAL }
 
     private static final String[] STYLE_LABELS = { "Classique", "Naturel" };
+
+    private static Class<?> IMGUI_CLASS = null;
+    private static boolean IMGUI_RESOLVED = false;
+
+    private static Class<?> imguiClass() {
+        if (!IMGUI_RESOLVED) {
+            IMGUI_RESOLVED = true;
+            try {
+                IMGUI_CLASS = Class.forName("imgui.ImGui");
+            } catch (ClassNotFoundException ignored) {}
+        }
+        return IMGUI_CLASS;
+    }
+
+    private static void igText(String s) {
+        try { Class<?> c = imguiClass(); if (c != null) c.getMethod("text", String.class).invoke(null, s); } catch (Exception ignored) {}
+    }
+
+    private static void igTextDisabled(String s) {
+        try { Class<?> c = imguiClass(); if (c != null) c.getMethod("textDisabled", String.class).invoke(null, s); } catch (Exception ignored) {}
+    }
+
+    private static void igSeparator() {
+        try { Class<?> c = imguiClass(); if (c != null) c.getMethod("separator").invoke(null); } catch (Exception ignored) {}
+    }
+
+    private static void igSameLine() {
+        try { Class<?> c = imguiClass(); if (c != null) c.getMethod("sameLine").invoke(null); } catch (Exception ignored) {}
+    }
+
+    private static boolean igSliderInt(String label, int[] v, int min, int max) {
+        try { Class<?> c = imguiClass(); if (c != null) return (boolean) c.getMethod("sliderInt", String.class, int[].class, int.class, int.class).invoke(null, label, v, min, max); } catch (Exception ignored) {}
+        return false;
+    }
+
+    private static boolean igCheckbox(String label, boolean v) {
+        try { Class<?> c = imguiClass(); if (c != null) { boolean[] arr = {v}; boolean r = (boolean) c.getMethod("checkbox", String.class, boolean[].class).invoke(null, label, arr); return r; } } catch (Exception ignored) {}
+        return false;
+    }
+
+    private static boolean igRadioButton(String label, boolean active) {
+        try { Class<?> c = imguiClass(); if (c != null) return (boolean) c.getMethod("radioButton", String.class, boolean.class).invoke(null, label, active); } catch (Exception ignored) {}
+        return false;
+    }
+
+    private static boolean igButton(String label) {
+        try { Class<?> c = imguiClass(); if (c != null) return (boolean) c.getMethod("button", String.class).invoke(null, label); } catch (Exception ignored) {}
+        return false;
+    }
 
     private static BlockState makeWall(Direction... dirs) {
         var s = Blocks.MUD_BRICK_WALL.getDefaultState()
@@ -201,50 +250,49 @@ public class RailPathTool implements Tool {
 
         boolean changed = false;
 
-        ImGui.text("Points : " + points.size());
-        ImGui.separator();
+        igText("Points : " + points.size());
+        igSeparator();
 
-        if (ImGui.sliderInt("Densite (pts/bloc)", density, 2, 32)) changed = true;
+        if (igSliderInt("Densite (pts/bloc)", density, 2, 32)) changed = true;
 
-        if (ImGui.checkbox("Coller au sol", snapToGround[0])) {
-            snapToGround[0] = !snapToGround[0];
-            changed = true;
-        }
-        ImGui.sameLine();
-        if (ImGui.checkbox("Apercu", showPreview[0])) {
-            showPreview[0] = !showPreview[0];
-        }
+        boolean newSnap = igCheckbox("Coller au sol", snapToGround[0]);
+        if (newSnap != snapToGround[0]) { snapToGround[0] = newSnap; changed = true; }
 
-        ImGui.separator();
+        igSameLine();
+
+        boolean newPrev = igCheckbox("Apercu", showPreview[0]);
+        if (newPrev != showPreview[0]) { showPreview[0] = newPrev; }
+
+        igSeparator();
         ImGuiHelper.separatorWithText("Style");
 
         for (int i = 0; i < STYLE_LABELS.length; i++) {
-            if (i > 0) ImGui.sameLine();
-            if (ImGui.radioButton(STYLE_LABELS[i], styleIndex[0] == i)) {
+            if (i > 0) igSameLine();
+            if (igRadioButton(STYLE_LABELS[i], styleIndex[0] == i)) {
                 styleIndex[0] = i;
                 changed = true;
             }
         }
 
-        ImGui.textDisabled(switch (currentStyle()) {
+        igTextDisabled(switch (currentStyle()) {
             case CLASSIC -> "Corail + murs + etageres";
             case NATURAL -> "Pupitre + gravier + feuilles";
         });
 
         if (changed) dirty = true;
 
-        ImGui.separator();
-        if (points.size() >= 2 && ImGui.button("Valider")) confirm();
+        igSeparator();
+        if (points.size() >= 2 && igButton("Valider")) confirm();
         if (!points.isEmpty()) {
-            if (ImGui.button("Annuler dernier")) {
+            if (igButton("Annuler dernier")) {
                 points.remove(points.size() - 1);
                 dirty = true;
             }
-            ImGui.sameLine();
-            if (ImGui.button("Reinitialiser")) reset();
+            igSameLine();
+            if (igButton("Reinitialiser")) reset();
         }
-        ImGui.separator();
-        ImGui.textDisabled("Clic droit: point | Entree: valider | Suppr: annuler");
+        igSeparator();
+        igTextDisabled("Clic droit: point | Entree: valider | Suppr: annuler");
     }
 
     @Override
