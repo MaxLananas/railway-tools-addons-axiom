@@ -5,19 +5,18 @@ import com.moulberry.axiom.UserAction;
 import com.moulberry.axiom.core_rendering.AxiomRenderPipelines;
 import com.moulberry.axiom.core_rendering.AxiomRenderer;
 import com.moulberry.axiom.editor.ImGuiHelper;
+import com.moulberry.axiom.render.AxiomWorldRenderContext;
 import com.moulberry.axiom.render.Shapes;
 import com.moulberry.axiom.render.VertexConsumerProvider;
 import com.moulberry.axiom.render.regions.ChunkedBlockRegion;
 import com.moulberry.axiom.restrictions.AxiomPermission;
 import com.moulberry.axiom.tools.Tool;
 import com.moulberry.axiom.utils.RegionHelper;
-import imgui.ImGui;
 import net.minecraft.block.BlockState;
 import net.minecraft.block.Blocks;
 import net.minecraft.block.LecternBlock;
 import net.minecraft.block.enums.WallShape;
 import net.minecraft.client.MinecraftClient;
-import net.minecraft.client.render.Camera;
 import net.minecraft.client.render.VertexFormats;
 import net.minecraft.client.util.math.MatrixStack;
 import net.minecraft.client.world.ClientWorld;
@@ -32,7 +31,6 @@ import net.minecraft.util.Identifier;
 import net.minecraft.util.math.BlockPos;
 import net.minecraft.util.math.Direction;
 import net.minecraft.util.math.Vec3d;
-import org.joml.Matrix4f;
 
 import java.util.*;
 
@@ -153,27 +151,30 @@ public class RailPathTool implements Tool {
     }
 
     @Override
-    public void render(Camera camera, float tickDelta, long time,
-                       MatrixStack matrices, Matrix4f projection) {
+    public void render(AxiomWorldRenderContext ctx) {
         if (dirty) {
             preview.clear();
             if (points.size() >= 2) buildRail(preview);
             dirty = false;
         }
 
+        long time = System.currentTimeMillis();
+        float pulse = 0.6f + 0.2f * (float) Math.sin(time / 400_000.0);
+
         if (showPreview[0] && !preview.isEmpty()) {
-            float pulse = 0.6f + 0.2f * (float) Math.sin(time / 400_000.0);
-            preview.render(camera, Vec3d.ZERO, null, matrices, projection, pulse, 0.25f);
+            preview.render(ctx, Vec3d.ZERO, null, pulse, 0.25f);
         }
 
-        if (points.size() >= 2) renderControlLines(matrices, camera);
+        if (points.size() >= 2) renderControlLines(ctx);
 
-        Tool.renderRaycastOverlay(
-                Tool.raycastBlock(false, true, Tool.defaultIncludeFluids()),
-                matrices, camera);
+        Tool.renderRaycastOverlay(ctx,
+                Tool.raycastBlock(false, true, Tool.defaultIncludeFluids()));
     }
 
-    private void renderControlLines(MatrixStack matrices, Camera camera) {
+    private void renderControlLines(AxiomWorldRenderContext ctx) {
+        MatrixStack matrices = ctx.matrixStack();
+        var camera = ctx.camera();
+
         var vcp = VertexConsumerProvider.shared();
         matrices.push();
         matrices.translate(-camera.getPos().x, -camera.getPos().y, -camera.getPos().z);
@@ -195,27 +196,25 @@ public class RailPathTool implements Tool {
     @Override
     public void displayImguiOptions() {
         ImGuiHelper.separatorWithText("BTE Rail Path Tool");
-        ImGui.text("Points : " + points.size());
-        ImGui.separator();
+        ImGuiHelper.text("Points : " + points.size());
+        ImGuiHelper.separator();
 
         boolean changed = false;
 
-        if (ImGui.sliderInt("Densité (pts/bloc)", density, 2, 32)) changed = true;
+        if (ImGuiHelper.sliderInt("Densite (pts/bloc)", density, 2, 32)) changed = true;
 
-        if (ImGui.checkbox("Coller au sol", snapToGround[0])) {
-            snapToGround[0] = !snapToGround[0];
+        if (ImGuiHelper.checkbox("Coller au sol", snapToGround)) {
             changed = true;
         }
-        ImGui.sameLine();
-        if (ImGui.checkbox("Aperçu", showPreview[0]))
-            showPreview[0] = !showPreview[0];
+        ImGuiHelper.sameLine();
+        ImGuiHelper.checkbox("Apercu", showPreview);
 
-        ImGui.separator();
+        ImGuiHelper.separator();
         ImGuiHelper.separatorWithText("Style de rail");
 
         for (int i = 0; i < STYLE_LABELS.length; i++) {
-            if (i > 0) ImGui.sameLine();
-            if (ImGui.radioButton(STYLE_LABELS[i], styleIndex[0] == i)) {
+            if (i > 0) ImGuiHelper.sameLine();
+            if (ImGuiHelper.radioButton(STYLE_LABELS[i], styleIndex[0] == i)) {
                 styleIndex[0] = i;
                 changed = true;
             }
@@ -225,22 +224,22 @@ public class RailPathTool implements Tool {
             case CLASSIC -> "Corail + murs en brique de boue + etageres";
             case NATURAL -> "Pupitre + gravier + litiere de feuilles";
         };
-        ImGui.textColored(0xFF888888, desc);
+        ImGuiHelper.textDisabled(desc);
 
         if (changed) dirty = true;
 
-        ImGui.separator();
-        if (points.size() >= 2 && ImGui.button("Valider", -1, 0)) confirm();
+        ImGuiHelper.separator();
+        if (points.size() >= 2 && ImGuiHelper.button("Valider")) confirm();
         if (!points.isEmpty()) {
-            if (ImGui.button("Annuler dernier", -1, 0)) {
+            if (ImGuiHelper.button("Annuler dernier")) {
                 points.remove(points.size() - 1);
                 dirty = true;
             }
-            ImGui.sameLine();
-            if (ImGui.button("Réinitialiser", -1, 0)) reset();
+            ImGuiHelper.sameLine();
+            if (ImGuiHelper.button("Reinitialiser")) reset();
         }
-        ImGui.separator();
-        ImGui.textColored(0xFFAAAAAA, "Clic droit: point | Entrée: valider | Suppr: annuler");
+        ImGuiHelper.separator();
+        ImGuiHelper.textDisabled("Clic droit: point | Entree: valider | Suppr: annuler");
     }
 
     @Override
@@ -273,7 +272,7 @@ public class RailPathTool implements Tool {
         };
     }
 
-    @Override public String listenForEsc()   { return points.isEmpty()   ? null : "Réinitialiser"; }
+    @Override public String listenForEsc()   { return points.isEmpty()   ? null : "Reinitialiser"; }
     @Override public String listenForEnter() { return points.size() >= 2 ? "Valider" : null; }
 
     private void confirm() {
