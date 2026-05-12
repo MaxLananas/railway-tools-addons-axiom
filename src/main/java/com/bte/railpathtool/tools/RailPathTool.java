@@ -12,6 +12,7 @@ import com.moulberry.axiom.render.regions.ChunkedBlockRegion;
 import com.moulberry.axiom.restrictions.AxiomPermission;
 import com.moulberry.axiom.tools.Tool;
 import com.moulberry.axiom.utils.RegionHelper;
+import imgui.ImGui;
 import net.minecraft.block.BlockState;
 import net.minecraft.block.Blocks;
 import net.minecraft.block.LecternBlock;
@@ -165,13 +166,13 @@ public class RailPathTool implements Tool {
             preview.render(ctx, Vec3d.ZERO, null, pulse, 0.25f);
         }
 
-        if (points.size() >= 2) renderControlLines(ctx);
+        if (points.size() >= 2) renderControlLines();
 
         Tool.renderRaycastOverlay(ctx,
                 Tool.raycastBlock(false, true, Tool.defaultIncludeFluids()));
     }
 
-    private void renderControlLines(AxiomWorldRenderContext ctx) {
+    private void renderControlLines() {
         MinecraftClient mc = MinecraftClient.getInstance();
         var camera = mc.gameRenderer.getCamera();
         MatrixStack matrices = new MatrixStack();
@@ -197,40 +198,53 @@ public class RailPathTool implements Tool {
     @Override
     public void displayImguiOptions() {
         ImGuiHelper.separatorWithText("BTE Rail Path Tool");
-        ImGuiHelper.label("Points : " + points.size());
 
         boolean changed = false;
 
-        if (ImGuiHelper.sliderInt("Densite", density, 2, 32)) changed = true;
+        ImGui.text("Points : " + points.size());
+        ImGui.separator();
 
-        if (ImGuiHelper.checkbox("Coller au sol", snapToGround)) changed = true;
-        ImGuiHelper.sameLine();
-        ImGuiHelper.checkbox("Apercu", showPreview);
+        if (ImGui.sliderInt("Densite (pts/bloc)", density, 2, 32)) changed = true;
 
-        ImGuiHelper.separatorWithText("Style");
-        for (int i = 0; i < STYLE_LABELS.length; i++) {
-            if (i > 0) ImGuiHelper.sameLine();
-            if (ImGuiHelper.radioButton(STYLE_LABELS[i], styleIndex, i)) changed = true;
+        if (ImGui.checkbox("Coller au sol", snapToGround[0])) {
+            snapToGround[0] = !snapToGround[0];
+            changed = true;
+        }
+        ImGui.sameLine();
+        if (ImGui.checkbox("Apercu", showPreview[0])) {
+            showPreview[0] = !showPreview[0];
         }
 
-        ImGuiHelper.label(switch (currentStyle()) {
+        ImGui.separator();
+        ImGuiHelper.separatorWithText("Style");
+
+        for (int i = 0; i < STYLE_LABELS.length; i++) {
+            if (i > 0) ImGui.sameLine();
+            if (ImGui.radioButton(STYLE_LABELS[i], styleIndex[0] == i)) {
+                styleIndex[0] = i;
+                changed = true;
+            }
+        }
+
+        ImGui.textDisabled(switch (currentStyle()) {
             case CLASSIC -> "Corail + murs + etageres";
             case NATURAL -> "Pupitre + gravier + feuilles";
         });
 
         if (changed) dirty = true;
 
-        ImGuiHelper.separatorWithText("Actions");
-        if (points.size() >= 2 && ImGuiHelper.button("Valider")) confirm();
+        ImGui.separator();
+        if (points.size() >= 2 && ImGui.button("Valider")) confirm();
         if (!points.isEmpty()) {
-            if (ImGuiHelper.button("Annuler dernier")) {
+            if (ImGui.button("Annuler dernier")) {
                 points.remove(points.size() - 1);
                 dirty = true;
             }
-            ImGuiHelper.sameLine();
-            if (ImGuiHelper.button("Reinitialiser")) reset();
+            ImGui.sameLine();
+            if (ImGui.button("Reinitialiser")) reset();
         }
-        ImGuiHelper.label("Clic droit: point | Entree: valider | Suppr: annuler");
+        ImGui.separator();
+        ImGui.textDisabled("Clic droit: point | Entree: valider | Suppr: annuler");
     }
 
     @Override
