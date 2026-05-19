@@ -8,8 +8,9 @@ on:
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
-  AXIOM_JAR: Axiom-5.4.1-for-MC1.21.10.jar
-  AXIOM_URL: https://github.com/MaxLananas/railway-tools-addons-axiom/releases/download/deps/Axiom-5.4.1-for-MC1.21.10.jar
+  AXIOM_VERSION: 5.4.2
+  AXIOM_JAR: Axiom-5.4.2-for-MC1.21.10.jar
+  AXIOM_URL: https://cdn.modrinth.com/data/N6n5dqoA/versions/65TQdBZB/Axiom-5.4.2-for-MC1.21.10.jar
 
 jobs:
   build:
@@ -50,6 +51,7 @@ jobs:
 
           sed -i "s/^mod_version=.*/mod_version=${NEW_VERSION}/" gradle.properties
           echo "NEW_VERSION=${NEW_VERSION}" >> "$GITHUB_ENV"
+          echo "PREVIOUS_VERSION=${CURRENT}" >> "$GITHUB_ENV"
           echo "Bumped version: ${CURRENT} -> ${NEW_VERSION}"
 
       - name: Commit bumped version
@@ -69,7 +71,7 @@ jobs:
           java-version: '21'
           distribution: 'temurin'
 
-      - name: Download Axiom dependency
+      - name: Download Axiom from Modrinth
         run: |
           mkdir -p libs
           curl -L \
@@ -78,7 +80,7 @@ jobs:
             --fail \
             -o "libs/${{ env.AXIOM_JAR }}" \
             "${{ env.AXIOM_URL }}"
-          echo "Axiom downloaded: $(du -sh libs/${{ env.AXIOM_JAR }} | cut -f1)"
+          echo "✓ Axiom ${{ env.AXIOM_VERSION }} downloaded: $(du -sh libs/${{ env.AXIOM_JAR }} | cut -f1)"
 
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v4
@@ -101,11 +103,35 @@ jobs:
       - name: Get mod version
         id: version
         run: |
-          VERSION=$(grep "^mod_version"      gradle.properties | cut -d'=' -f2 | tr -d ' \r\n')
+          VERSION=$(grep "^mod_version" gradle.properties | cut -d'=' -f2 | tr -d ' \r\n')
           MC_VERSION=$(grep "^minecraft_version" gradle.properties | cut -d'=' -f2 | tr -d ' \r\n')
-          echo "version=${VERSION}"               >> "$GITHUB_OUTPUT"
-          echo "mc_version=${MC_VERSION}"         >> "$GITHUB_OUTPUT"
-          echo "tag=v${VERSION}-mc${MC_VERSION}"  >> "$GITHUB_OUTPUT"
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+          echo "mc_version=${MC_VERSION}" >> "$GITHUB_OUTPUT"
+          echo "tag=v${VERSION}-mc${MC_VERSION}" >> "$GITHUB_OUTPUT"
+
+      - name: Generate changelog
+        id: changelog
+        if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master')
+        run: |
+          LAST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "")
+          
+          if [ -z "$LAST_TAG" ]; then
+            CHANGELOG="### 🎉 Initial Release"
+          else
+            CHANGELOG="### 📝 Changes since $LAST_TAG"$'\n\n'
+            
+            COMMITS=$(git log ${LAST_TAG}..HEAD --pretty=format:"- %s (%an)" --no-merges | grep -v "\[skip ci\]" || echo "")
+            
+            if [ -z "$COMMITS" ]; then
+              CHANGELOG+="- Minor improvements and fixes"
+            else
+              CHANGELOG+="$COMMITS"
+            fi
+          fi
+          
+          echo "changelog<<EOF" >> "$GITHUB_OUTPUT"
+          echo "$CHANGELOG" >> "$GITHUB_OUTPUT"
+          echo "EOF" >> "$GITHUB_OUTPUT"
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
@@ -123,7 +149,7 @@ jobs:
         run: |
           TAG="${{ steps.version.outputs.tag }}"
           if git ls-remote --tags origin "refs/tags/$TAG" | grep -q "$TAG"; then
-            echo "exists=true"  >> "$GITHUB_OUTPUT"
+            echo "exists=true" >> "$GITHUB_OUTPUT"
           else
             echo "exists=false" >> "$GITHUB_OUTPUT"
           fi
@@ -140,14 +166,21 @@ jobs:
           body: |
             ## Railway Tools for Axiom `${{ steps.version.outputs.version }}`
 
-            **Minecraft** : `${{ steps.version.outputs.mc_version }}`
-            **Requires** : Axiom
+            **Minecraft**: `${{ steps.version.outputs.mc_version }}`  
+            **Requires**: Axiom `${{ env.AXIOM_VERSION }}` (téléchargeable depuis Modrinth)
 
-            ### Installation
-            Place the `.jar` file in your `mods/` folder.
+            ${{ steps.changelog.outputs.changelog }}
+
+            ### 📦 Installation
+            1. Téléchargez le fichier `.jar` ci-dessous
+            2. Placez-le dans votre dossier `mods/`
+            3. Assurez-vous d'avoir Axiom installé
+
+            ### 🔗 Liens
+            - [Télécharger Axiom depuis Modrinth](https://modrinth.com/plugin/axiom)
 
             ---
-            *Automated build via GitHub Actions*
+            *Build automatisé via GitHub Actions*
           files: |
             build/libs/*.jar
           draft: false
