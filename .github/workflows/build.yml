@@ -80,25 +80,33 @@ jobs:
             --fail \
             -o "libs/${{ env.AXIOM_JAR }}" \
             "${{ env.AXIOM_URL }}"
-          echo "✓ Axiom ${{ env.AXIOM_VERSION }} downloaded: $(du -sh libs/${{ env.AXIOM_JAR }} | cut -f1)"
+          echo "✓ Axiom ${{ env.AXIOM_VERSION }} téléchargé: $(du -sh libs/${{ env.AXIOM_JAR }} | cut -f1)"
 
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v4
         with:
-          cache-disabled: true
+          cache-disabled: false
+          cache-read-only: false
 
       - name: Make gradlew executable
         run: chmod +x ./gradlew
 
+      - name: Clean Gradle cache
+        run: |
+          ./gradlew clean --no-daemon --warning-mode summary || true
+          rm -rf ~/.gradle/caches/fabric-loom
+        continue-on-error: true
+
       - name: Build
         run: |
           ./gradlew build \
-            --no-build-cache \
+            --refresh-dependencies \
             --no-daemon \
             --parallel \
-            --warning-mode summary
+            --warning-mode summary \
+            --stacktrace
         env:
-          GRADLE_OPTS: "-Dorg.gradle.daemon=false -Xmx2G -Xms512m"
+          GRADLE_OPTS: "-Dorg.gradle.daemon=false -Xmx3G -Xms1G"
 
       - name: Get mod version
         id: version
@@ -116,14 +124,14 @@ jobs:
           LAST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "")
           
           if [ -z "$LAST_TAG" ]; then
-            CHANGELOG="### 🎉 Initial Release"
+            CHANGELOG="### 🎉 Version initiale"
           else
-            CHANGELOG="### 📝 Changes since $LAST_TAG"$'\n\n'
+            CHANGELOG="### 📝 Changements depuis $LAST_TAG"$'\n\n'
             
-            COMMITS=$(git log ${LAST_TAG}..HEAD --pretty=format:"- %s (%an)" --no-merges | grep -v "\[skip ci\]" || echo "")
+            COMMITS=$(git log ${LAST_TAG}..HEAD --pretty=format:"- %s" --no-merges | grep -v "\[skip ci\]" || echo "")
             
             if [ -z "$COMMITS" ]; then
-              CHANGELOG+="- Minor improvements and fixes"
+              CHANGELOG+="- Améliorations mineures et corrections"
             else
               CHANGELOG+="$COMMITS"
             fi
@@ -167,7 +175,7 @@ jobs:
             ## Railway Tools for Axiom `${{ steps.version.outputs.version }}`
 
             **Minecraft**: `${{ steps.version.outputs.mc_version }}`  
-            **Requires**: Axiom `${{ env.AXIOM_VERSION }}` (téléchargeable depuis Modrinth)
+            **Requis**: Axiom `${{ env.AXIOM_VERSION }}+`
 
             ${{ steps.changelog.outputs.changelog }}
 
@@ -176,13 +184,12 @@ jobs:
             2. Placez-le dans votre dossier `mods/`
             3. Assurez-vous d'avoir Axiom installé
 
-            ### 🔗 Liens
-            - [Télécharger Axiom depuis Modrinth](https://modrinth.com/plugin/axiom)
+            ### 🔗 Dépendance
+            - [Télécharger Axiom sur Modrinth](https://modrinth.com/plugin/axiom/versions)
 
             ---
-            *Build automatisé via GitHub Actions*
-          files: |
-            build/libs/*.jar
+            *Build automatisé — ${{ github.sha }}*
+          files: build/libs/*[!-dev][!-sources].jar
           draft: false
           prerelease: false
           make_latest: true
