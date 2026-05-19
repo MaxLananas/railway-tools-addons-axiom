@@ -89,6 +89,12 @@ jobs:
           cache-disabled: false
           cache-read-only: false
 
+      - name: Clean Loom cache
+        run: |
+          rm -rf ~/.gradle/caches/fabric-loom
+          rm -rf .gradle/loom-cache
+          echo "✅ Cache Loom nettoyé"
+
       - name: Make gradlew executable
         run: chmod +x ./gradlew
 
@@ -178,11 +184,11 @@ jobs:
             2. Placez-le dans votre dossier `mods/`
             3. Assurez-vous d'avoir Axiom installé
 
-            ### 🔗 Dépendance
-            - [Télécharger Axiom sur Modrinth](https://modrinth.com/plugin/axiom/versions)
+            ### 🔗 Dépendances
+            - [Télécharger Axiom ${{ env.AXIOM_VERSION }} sur Modrinth](https://modrinth.com/plugin/axiom/version/65TQdBZB)
 
             ---
-            *Build automatisé — Axiom ${{ env.AXIOM_VERSION }}*
+            *Build automatisé — Loom 1.16.3 — Axiom ${{ env.AXIOM_VERSION }}*
           files: build/libs/*[!-dev][!-sources].jar
           draft: false
           prerelease: false
