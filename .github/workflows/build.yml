@@ -80,7 +80,8 @@ jobs:
             --fail \
             -o "libs/${{ env.AXIOM_JAR }}" \
             "${{ env.AXIOM_URL }}"
-          echo "✓ Axiom ${{ env.AXIOM_VERSION }} téléchargé: $(du -sh libs/${{ env.AXIOM_JAR }} | cut -f1)"
+          echo "✅ Axiom ${{ env.AXIOM_VERSION }} téléchargé: $(du -sh libs/${{ env.AXIOM_JAR }} | cut -f1)"
+          ls -lh libs/
 
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v4
@@ -91,16 +92,9 @@ jobs:
       - name: Make gradlew executable
         run: chmod +x ./gradlew
 
-      - name: Clean Gradle cache
-        run: |
-          ./gradlew clean --no-daemon --warning-mode summary || true
-          rm -rf ~/.gradle/caches/fabric-loom
-        continue-on-error: true
-
       - name: Build
         run: |
           ./gradlew build \
-            --refresh-dependencies \
             --no-daemon \
             --parallel \
             --warning-mode summary \
@@ -188,7 +182,7 @@ jobs:
             - [Télécharger Axiom sur Modrinth](https://modrinth.com/plugin/axiom/versions)
 
             ---
-            *Build automatisé — ${{ github.sha }}*
+            *Build automatisé — Axiom ${{ env.AXIOM_VERSION }}*
           files: build/libs/*[!-dev][!-sources].jar
           draft: false
           prerelease: false
