@@ -1,6 +1,8 @@
 package com.bte.railpathtool;
 
 import com.bte.railpathtool.tools.RailPathTool;
+import com.moulberry.axiomclientapi.CustomTool;
+import com.moulberry.axiomclientapi.service.ToolRegistryService;
 import net.fabricmc.api.ClientModInitializer;
 import net.fabricmc.loader.api.FabricLoader;
 import org.slf4j.Logger;
@@ -19,14 +21,15 @@ public class RailPathToolMod implements ClientModInitializer {
             return;
         }
         try {
-            Class<?> registryClass = Class.forName("com.moulberry.axiomclientapi.service.ToolRegistryService");
-            ServiceLoader<?> loader = ServiceLoader.load(registryClass);
-            for (Object service : loader) {
-                registryClass.getMethod("register", Class.forName("com.moulberry.axiomclientapi.CustomTool"))
-                        .invoke(service, new RailPathTool());
-                break;
-            }
-            LOGGER.info("[RailPath] Charge avec succes.");
+            ServiceLoader.load(ToolRegistryService.class)
+                         .findFirst()
+                         .ifPresentOrElse(
+                             svc -> {
+                                 svc.register(new RailPathTool());
+                                 LOGGER.info("[RailPath] Charge avec succes.");
+                             },
+                             () -> LOGGER.error("[RailPath] ToolRegistryService introuvable.")
+                         );
         } catch (Exception e) {
             LOGGER.error("[RailPath] Erreur d'enregistrement : " + e.getMessage());
         }
