@@ -6,6 +6,7 @@ import net.minecraft.block.LecternBlock;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.world.ClientWorld;
 import net.minecraft.state.property.Properties;
+import net.minecraft.state.property.Property;
 import net.minecraft.util.hit.BlockHitResult;
 import net.minecraft.util.math.BlockPos;
 import net.minecraft.util.math.Direction;
@@ -109,7 +110,6 @@ public class RailPathTool {
     private void regionRender(Object region) {
         if (region == null) return;
         try {
-            // Cherche la méthode render disponible
             for (var method : region.getClass().getMethods()) {
                 if (method.getName().equals("render") && method.getParameterCount() <= 2) {
                     method.invoke(region);
@@ -433,27 +433,40 @@ public class RailPathTool {
         placeDiagJoints(region, cx, cy, cz, axisNS, centers);
     }
 
+    /**
+     * Applique une propriété à un BlockState via réflexion en contournant
+     * la contrainte générique T extends Comparable<T> de Property<T>.
+     *
+     * On passe par un helper générique qui capture T correctement.
+     */
+    @SuppressWarnings({"unchecked", "rawtypes"})
+    private static <T extends Comparable<T>> BlockState applyProperty(
+            BlockState state, Property<T> property, Comparable<?> value) {
+        return state.with(property, (T) value);
+    }
+
+    @SuppressWarnings({"unchecked", "rawtypes"})
     private BlockState oakButton(Direction facing) {
-       BlockState state = Blocks.OAK_BUTTON.getDefaultState()
-             .with(Properties.HORIZONTAL_FACING, facing)
-             .with(Properties.POWERED, false);
-    // Cherche la propriété "face" par réflexion pour éviter les problèmes de version
-       try {
-          for (var prop : state.getProperties()) {
-              if (prop.getName().equals("face")) {
-                  for (var val : prop.getValues()) {
-                      if (val.toString().equalsIgnoreCase("floor")) {
-                          @SuppressWarnings("unchecked")
-                          var castProp = (net.minecraft.state.property.Property<Comparable>) prop;
-                          state = state.with(castProp, (Comparable) val);
-                          break;
-                      }
-                  }
-                  break;
-              }
-          }
-       } catch (Exception ignored) {}
-       return state;
+        BlockState state = Blocks.OAK_BUTTON.getDefaultState()
+                .with(Properties.HORIZONTAL_FACING, facing)
+                .with(Properties.POWERED, false);
+
+        // Cherche la propriété "face" par réflexion pour éviter les problèmes de version
+        try {
+            for (Property<?> prop : state.getProperties()) {
+                if (prop.getName().equals("face")) {
+                    for (Comparable<?> val : (Collection<Comparable<?>>) (Collection<?>) prop.getValues()) {
+                        if (val.toString().equalsIgnoreCase("floor")) {
+                            state = applyProperty(state, (Property) prop, val);
+                            break;
+                        }
+                    }
+                    break;
+                }
+            }
+        } catch (Exception ignored) {}
+
+        return state;
     }
 
     private BlockState leafLitter(int amount, String facing) {
