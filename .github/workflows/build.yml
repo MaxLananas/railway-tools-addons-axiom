@@ -82,6 +82,8 @@ jobs:
             "${{ env.AXIOM_URL }}"
           echo "✅ Axiom ${{ env.AXIOM_VERSION }} téléchargé: $(du -sh libs/${{ env.AXIOM_JAR }} | cut -f1)"
           ls -lh libs/
+          # Vérifier que le JAR contient bien les classes Axiom
+          jar tf "libs/${{ env.AXIOM_JAR }}" | grep "com/moulberry" | head -5
 
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v4
