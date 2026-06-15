@@ -3,7 +3,6 @@ package com.bte.railpathtool.tools;
 import net.minecraft.block.BlockState;
 import net.minecraft.block.Blocks;
 import net.minecraft.block.LecternBlock;
-import net.minecraft.block.enums.WallMountLocation;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.world.ClientWorld;
 import net.minecraft.state.property.Properties;
@@ -435,10 +434,26 @@ public class RailPathTool {
     }
 
     private BlockState oakButton(Direction facing) {
-        return Blocks.OAK_BUTTON.getDefaultState()
-                .with(Properties.WALL_MOUNT_LOCATION, WallMountLocation.FLOOR)
-                .with(Properties.HORIZONTAL_FACING, facing)
-                .with(Properties.POWERED, false);
+       BlockState state = Blocks.OAK_BUTTON.getDefaultState()
+             .with(Properties.HORIZONTAL_FACING, facing)
+             .with(Properties.POWERED, false);
+    // Cherche la propriété "face" par réflexion pour éviter les problèmes de version
+       try {
+          for (var prop : state.getProperties()) {
+              if (prop.getName().equals("face")) {
+                  for (var val : prop.getValues()) {
+                      if (val.toString().equalsIgnoreCase("floor")) {
+                          @SuppressWarnings("unchecked")
+                          var castProp = (net.minecraft.state.property.Property<Comparable>) prop;
+                          state = state.with(castProp, (Comparable) val);
+                          break;
+                      }
+                  }
+                  break;
+              }
+          }
+       } catch (Exception ignored) {}
+       return state;
     }
 
     private BlockState leafLitter(int amount, String facing) {
