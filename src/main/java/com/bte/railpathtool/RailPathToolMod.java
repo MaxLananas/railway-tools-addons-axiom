@@ -6,8 +6,6 @@ import net.fabricmc.loader.api.FabricLoader;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.util.ServiceLoader;
-
 public class RailPathToolMod implements ClientModInitializer {
 
     public static final Logger LOGGER = LoggerFactory.getLogger("bte_railpathtool");
@@ -19,24 +17,13 @@ public class RailPathToolMod implements ClientModInitializer {
             return;
         }
         try {
-            Class<?> registryClass = Class.forName("com.moulberry.axiomclientapi.service.ToolRegistryService");
-            @SuppressWarnings("unchecked")
-            ServiceLoader<Object> loader = (ServiceLoader<Object>) ServiceLoader.load(registryClass);
-            boolean registered = false;
-            for (Object service : loader) {
-                registryClass.getMethod("register",
-                        Class.forName("com.moulberry.axiomclientapi.CustomTool"))
-                        .invoke(service, new RailPathTool());
-                registered = true;
-                break;
-            }
-            if (registered) {
-                LOGGER.info("[RailPath] Charge avec succes.");
-            } else {
-                LOGGER.error("[RailPath] ToolRegistryService introuvable.");
-            }
+            Class<?> toolManagerClass = Class.forName("com.moulberry.axiom.tools.ToolManager");
+            toolManagerClass.getMethod("addTool",
+                    Class.forName("com.moulberry.axiom.tools.Tool"))
+                    .invoke(null, new RailPathTool());
+            LOGGER.info("[RailPath] Charge avec succes.");
         } catch (Exception e) {
-            LOGGER.error("[RailPath] Erreur d'enregistrement : " + e.getMessage(), e);
+            LOGGER.error("[RailPath] Erreur enregistrement: " + e.getMessage());
         }
     }
 }
