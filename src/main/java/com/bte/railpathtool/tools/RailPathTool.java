@@ -10,8 +10,8 @@ import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.block.state.properties.BlockStateProperties;
 import net.minecraft.world.level.block.state.properties.WallSide;
 import net.minecraft.world.phys.BlockHitResult;
+import net.minecraft.world.phys.Vec3;
 
-import java.lang.reflect.Method;
 import java.util.*;
 
 public class RailPathTool implements CustomTool {
@@ -29,6 +29,8 @@ public class RailPathTool implements CustomTool {
     private Object previewRegion = null;
     private Object toolService = null;
     private Object regionProvider = null;
+
+    // ── ImGui par réflexion ──────────────────────────────────────────────────
 
     private static Class<?> IMGUI_CLASS = null;
     private static boolean IMGUI_RESOLVED = false;
@@ -77,12 +79,13 @@ public class RailPathTool implements CustomTool {
         return false;
     }
 
+    // ── Services Axiom par réflexion ─────────────────────────────────────────
+
     private Object getToolService() {
         if (toolService != null) return toolService;
         try {
             Class<?> svcClass = Class.forName("com.moulberry.axiomclientapi.service.ToolService");
-            ServiceLoader<?> loader = ServiceLoader.load(svcClass);
-            for (Object s : loader) { toolService = s; break; }
+            for (Object s : ServiceLoader.load(svcClass)) { toolService = s; break; }
         } catch (Exception ignored) {}
         return toolService;
     }
@@ -91,8 +94,7 @@ public class RailPathTool implements CustomTool {
         if (regionProvider != null) return regionProvider;
         try {
             Class<?> svcClass = Class.forName("com.moulberry.axiomclientapi.service.RegionProvider");
-            ServiceLoader<?> loader = ServiceLoader.load(svcClass);
-            for (Object s : loader) { regionProvider = s; break; }
+            for (Object s : ServiceLoader.load(svcClass)) { regionProvider = s; break; }
         } catch (Exception ignored) {}
         return regionProvider;
     }
@@ -112,23 +114,34 @@ public class RailPathTool implements CustomTool {
 
     private void regionAddBlock(Object region, int x, int y, int z, BlockState state) {
         if (region == null) return;
-        try { region.getClass().getMethod("addBlock", int.class, int.class, int.class, BlockState.class).invoke(region, x, y, z, state); } catch (Exception ignored) {}
+        try {
+            region.getClass()
+                  .getMethod("addBlock", int.class, int.class, int.class, BlockState.class)
+                  .invoke(region, x, y, z, state);
+        } catch (Exception ignored) {}
     }
 
     private boolean regionIsEmpty(Object region) {
         if (region == null) return true;
-        try { return (boolean) region.getClass().getMethod("isEmpty").invoke(region); } catch (Exception ignored) { return true; }
+        try { return (boolean) region.getClass().getMethod("isEmpty").invoke(region); }
+        catch (Exception ignored) { return true; }
     }
 
     private void regionRender(Object region, IAxiomWorldRenderContext rc, float opacity) {
         if (region == null) return;
-        try { region.getClass().getMethod("render", IAxiomWorldRenderContext.class, net.minecraft.world.phys.Vec3.class, float.class, float.class).invoke(region, rc, net.minecraft.world.phys.Vec3.ZERO, opacity, 0.25f); } catch (Exception ignored) {}
+        try {
+            region.getClass()
+                  .getMethod("render", IAxiomWorldRenderContext.class, Vec3.class, float.class, float.class)
+                  .invoke(region, rc, Vec3.ZERO, opacity, 0.25f);
+        } catch (Exception ignored) {}
     }
 
-    private void pushRegionChange(Object region, String name) {
+    private void pushRegionChange(Object region) {
         try {
             Object svc = getToolService();
-            if (svc != null) svc.getClass().getMethod("pushBlockRegionChange", Class.forName("com.moulberry.axiomclientapi.regions.BlockRegion")).invoke(svc, region);
+            if (svc == null) return;
+            Class<?> brClass = Class.forName("com.moulberry.axiomclientapi.regions.BlockRegion");
+            svc.getClass().getMethod("pushBlockRegionChange", brClass).invoke(svc, region);
         } catch (Exception ignored) {}
     }
 
@@ -139,6 +152,8 @@ public class RailPathTool implements CustomTool {
         } catch (Exception ignored) {}
         return null;
     }
+
+    // ── CustomTool ───────────────────────────────────────────────────────────
 
     @Override
     public String name() { return "BTE Rail Path"; }
@@ -172,7 +187,6 @@ public class RailPathTool implements CustomTool {
 
         boolean changed = false;
         if (igSliderInt("Densite (pts/bloc)", density, 2, 32)) changed = true;
-
         if (igCheckbox("Coller au sol", snapToGround)) changed = true;
         igSameLine();
         igCheckbox("Apercu", showPreview);
@@ -191,10 +205,7 @@ public class RailPathTool implements CustomTool {
             if (igRadioButton(themes[i], themeIndex[0] == i)) { themeIndex[0] = i; changed = true; }
         }
 
-        igTextDisabled(styleIndex[0] == 0
-                ? "Corail + murs + etageres"
-                : "Pupitre + pale moss + feuilles");
-
+        igTextDisabled(styleIndex[0] == 0 ? "Corail + murs + etageres" : "Pupitre + pale moss + feuilles");
         if (changed) dirty = true;
 
         igSeparator();
@@ -232,10 +243,12 @@ public class RailPathTool implements CustomTool {
         return true;
     }
 
+    // ── Logique interne ──────────────────────────────────────────────────────
+
     private void confirm() {
         Object region = createBlockRegion();
         buildRail(region);
-        pushRegionChange(region, "BTE Rail Path");
+        pushRegionChange(region);
         reset();
     }
 
@@ -329,24 +342,29 @@ public class RailPathTool implements CustomTool {
         } else {
             return Blocks.IRON_DOOR.defaultBlockState()
                     .setValue(BlockStateProperties.HORIZONTAL_FACING, facing)
-                    .setValue(BlockStateProperties.DOOR_HINGE, net.minecraft.world.level.block.state.properties.DoorHingeSide.LEFT)
-                    .setValue(BlockStateProperties.DOUBLE_BLOCK_HALF, net.minecraft.world.level.block.state.properties.DoubleBlockHalf.UPPER)
+                    .setValue(BlockStateProperties.DOOR_HINGE,
+                            net.minecraft.world.level.block.state.properties.DoorHingeSide.LEFT)
+                    .setValue(BlockStateProperties.DOUBLE_BLOCK_HALF,
+                            net.minecraft.world.level.block.state.properties.DoubleBlockHalf.UPPER)
                     .setValue(BlockStateProperties.POWERED, false)
                     .setValue(BlockStateProperties.OPEN, false);
         }
     }
 
     @SuppressWarnings({"unchecked", "rawtypes"})
-    private BlockState setEnumProp(BlockState st, net.minecraft.world.level.block.state.properties.Property prop, String value) {
+    private BlockState setEnumProp(BlockState st,
+            net.minecraft.world.level.block.state.properties.Property prop, String value) {
         for (Object v : prop.getPossibleValues()) {
             if (v.toString().equalsIgnoreCase(value)) return st.setValue(prop, (Comparable) v);
         }
         return st;
     }
 
-    @SuppressWarnings({"unchecked"})
-    private BlockState setBoolProp(BlockState st, net.minecraft.world.level.block.state.properties.Property prop, boolean value) {
-        if (prop instanceof net.minecraft.world.level.block.state.properties.BooleanProperty bp) return st.setValue(bp, value);
+    @SuppressWarnings("unchecked")
+    private BlockState setBoolProp(BlockState st,
+            net.minecraft.world.level.block.state.properties.Property prop, boolean value) {
+        if (prop instanceof net.minecraft.world.level.block.state.properties.BooleanProperty bp)
+            return st.setValue(bp, value);
         return st;
     }
 
@@ -360,27 +378,27 @@ public class RailPathTool implements CustomTool {
         int cx = cur.cx(), cy = cur.cy(), cz = cur.cz();
 
         int tx, tz;
-        if (prv != null && nxt != null) { tx = nxt.cx() - prv.cx(); tz = nxt.cz() - prv.cz(); }
-        else if (prv != null) { tx = cx - prv.cx(); tz = cz - prv.cz(); }
-        else if (nxt != null) { tx = nxt.cx() - cx; tz = nxt.cz() - cz; }
-        else { tx = 1; tz = 0; }
+        if (prv != null && nxt != null)      { tx = nxt.cx() - prv.cx(); tz = nxt.cz() - prv.cz(); }
+        else if (prv != null)                { tx = cx - prv.cx();        tz = cz - prv.cz(); }
+        else if (nxt != null)                { tx = nxt.cx() - cx;        tz = nxt.cz() - cz; }
+        else                                 { tx = 1; tz = 0; }
 
         Direction tang = cardinal(tx, tz);
         regionAddBlock(region, cx, cy, cz, makeCoral(tang));
 
         int lx, lz, rx, rz;
         switch (tang) {
-            case NORTH -> { lx = cx - 1; lz = cz; rx = cx + 1; rz = cz; }
-            case SOUTH -> { lx = cx + 1; lz = cz; rx = cx - 1; rz = cz; }
-            case EAST  -> { lx = cx; lz = cz - 1; rx = cx; rz = cz + 1; }
-            default    -> { lx = cx; lz = cz + 1; rx = cx; rz = cz - 1; }
+            case NORTH -> { lx = cx - 1; lz = cz;     rx = cx + 1; rz = cz; }
+            case SOUTH -> { lx = cx + 1; lz = cz;     rx = cx - 1; rz = cz; }
+            case EAST  -> { lx = cx;     lz = cz - 1; rx = cx;     rz = cz + 1; }
+            default    -> { lx = cx;     lz = cz + 1; rx = cx;     rz = cz - 1; }
         }
 
         int dx = cur.dx(), dz = cur.dz();
         int ndx = nxt != null ? nxt.dx() : dx;
         int ndz = nxt != null ? nxt.dz() : dz;
 
-        safeAdd(region, lx, cy, lz, sideBlockClassic(tang, dx, dz, ndx, ndz, true), centers);
+        safeAdd(region, lx, cy, lz, sideBlockClassic(tang, dx, dz, ndx, ndz, true),  centers);
         safeAdd(region, rx, cy, rz, sideBlockClassic(tang, dx, dz, ndx, ndz, false), centers);
     }
 
@@ -393,11 +411,11 @@ public class RailPathTool implements CustomTool {
         if (curDiag && nxtDiag && latCur == latNxt) {
             return switch (tang) {
                 case NORTH, SOUTH -> dx > 0
-                        ? (left ? makeWall(Direction.NORTH, Direction.EAST) : makeWall(Direction.SOUTH, Direction.WEST))
-                        : (left ? makeWall(Direction.SOUTH, Direction.EAST) : makeWall(Direction.NORTH, Direction.WEST));
+                        ? (left ? makeWall(Direction.NORTH, Direction.EAST)  : makeWall(Direction.SOUTH, Direction.WEST))
+                        : (left ? makeWall(Direction.SOUTH, Direction.EAST)  : makeWall(Direction.NORTH, Direction.WEST));
                 case EAST, WEST -> dz > 0
-                        ? (left ? makeWall(Direction.NORTH, Direction.WEST) : makeWall(Direction.SOUTH, Direction.EAST))
-                        : (left ? makeWall(Direction.SOUTH, Direction.WEST) : makeWall(Direction.NORTH, Direction.EAST));
+                        ? (left ? makeWall(Direction.NORTH, Direction.WEST)  : makeWall(Direction.SOUTH, Direction.EAST))
+                        : (left ? makeWall(Direction.SOUTH, Direction.WEST)  : makeWall(Direction.NORTH, Direction.EAST));
                 default -> makeWall(Direction.NORTH, Direction.SOUTH);
             };
         }
@@ -406,21 +424,22 @@ public class RailPathTool implements CustomTool {
         if (lat != null) return makeSide(lat);
         return (tang == Direction.NORTH || tang == Direction.SOUTH)
                 ? makeWall(Direction.NORTH, Direction.SOUTH)
-                : makeWall(Direction.EAST, Direction.WEST);
+                : makeWall(Direction.EAST,  Direction.WEST);
     }
 
     private Direction lateral(int dx, int dz, Direction tang) {
         boolean ns = tang == Direction.NORTH || tang == Direction.SOUTH;
         if (ns) return dx > 0 ? Direction.EAST : dx < 0 ? Direction.WEST : null;
-        else return dz > 0 ? Direction.SOUTH : dz < 0 ? Direction.NORTH : null;
+        else    return dz > 0 ? Direction.SOUTH : dz < 0 ? Direction.NORTH : null;
     }
 
     private Direction cardinal(int tx, int tz) {
         if (Math.abs(tx) >= Math.abs(tz)) return tx >= 0 ? Direction.EAST : Direction.WEST;
-        else return tz >= 0 ? Direction.SOUTH : Direction.NORTH;
+        else                              return tz >= 0 ? Direction.SOUTH : Direction.NORTH;
     }
 
-    private void placeNatural(Object region, Seg cur, Seg prv, Seg nxt, List<Seg> all, int idx, Set<BlockPos> centers) {
+    private void placeNatural(Object region, Seg cur, Seg prv, Seg nxt,
+                               List<Seg> all, int idx, Set<BlockPos> centers) {
         int cx = cur.cx(), cy = cur.cy(), cz = cur.cz();
 
         int tx = 0, tz = 0;
@@ -430,8 +449,8 @@ public class RailPathTool implements CustomTool {
 
         boolean axisNS = Math.abs(tz) >= Math.abs(tx);
         Direction facing = axisNS ? Direction.NORTH : Direction.EAST;
-        boolean rising = idx > 0 && all.get(idx - 1).cy() == cy - 1
-                || idx < all.size() - 1 && all.get(idx + 1).cy() == cy - 1;
+        boolean rising = (idx > 0 && all.get(idx - 1).cy() == cy - 1)
+                      || (idx < all.size() - 1 && all.get(idx + 1).cy() == cy - 1);
 
         if (!rising) {
             regionAddBlock(region, cx, cy, cz, Blocks.LECTERN.defaultBlockState()
@@ -456,7 +475,7 @@ public class RailPathTool implements CustomTool {
         String d2 = neighborDir(nxt, cx, cz);
 
         if (axisNS) placeLeafNS(region, cx, cy, cz, d1, d2, centers);
-        else placeLeafEW(region, cx, cy, cz, d1, d2, centers);
+        else        placeLeafEW(region, cx, cy, cz, d1, d2, centers);
 
         placeDiagJoints(region, cx, cy, cz, axisNS, centers);
     }
@@ -470,7 +489,7 @@ public class RailPathTool implements CustomTool {
             } else if (prop.getName().equals("facing")) {
                 state = setEnumProp(state, prop, facing.getName());
             } else if (prop.getName().equals("powered")) {
-                state = setBoolProp(state, prop, true);
+                state = setBoolProp(state, prop, false);
             }
         }
         return state;
@@ -479,14 +498,15 @@ public class RailPathTool implements CustomTool {
     private BlockState leafLitter(int amount, String facing) {
         Direction dir = switch (facing.toLowerCase(Locale.ROOT)) {
             case "south" -> Direction.SOUTH;
-            case "east" -> Direction.EAST;
-            case "west" -> Direction.WEST;
-            default -> Direction.NORTH;
+            case "east"  -> Direction.EAST;
+            case "west"  -> Direction.WEST;
+            default      -> Direction.NORTH;
         };
         BlockState state = Blocks.LEAF_LITTER.defaultBlockState()
                 .setValue(BlockStateProperties.HORIZONTAL_FACING, dir);
         for (var prop : state.getProperties()) {
-            if (prop.getName().equals("segment_amount") && prop instanceof net.minecraft.world.level.block.state.properties.IntegerProperty ip) {
+            if (prop.getName().equals("segment_amount")
+                    && prop instanceof net.minecraft.world.level.block.state.properties.IntegerProperty ip) {
                 int mn = ip.getPossibleValues().stream().mapToInt(v -> v).min().orElse(1);
                 int mx = ip.getPossibleValues().stream().mapToInt(v -> v).max().orElse(4);
                 state = state.setValue(ip, Math.max(mn, Math.min(mx, amount)));
@@ -496,45 +516,48 @@ public class RailPathTool implements CustomTool {
         return state;
     }
 
-    private void placeLeafNS(Object region, int cx, int cy, int cz, String d1, String d2, Set<BlockPos> centers) {
+    private void placeLeafNS(Object region, int cx, int cy, int cz,
+                              String d1, String d2, Set<BlockPos> centers) {
         int eA = 2; String eF = "north";
         int wA = 2; String wF = "south";
-        if (pair(d1, d2, "N", "S"))     { eA=2; eF="north"; wA=2; wF="south"; }
-        else if (pair(d1,d2,"N","SE"))  { eA=3; eF="south"; wA=2; wF="south"; }
-        else if (pair(d1,d2,"N","SO"))  { eA=2; eF="north"; wA=3; wF="east";  }
-        else if (pair(d1,d2,"S","NE"))  { eA=3; eF="west";  wA=2; wF="south"; }
-        else if (pair(d1,d2,"S","NO"))  { eA=2; eF="north"; wA=3; wF="north"; }
-        else if (pair(d1,d2,"NE","SO")) { eA=3; eF="west";  wA=3; wF="east";  }
-        else if (pair(d1,d2,"NO","SE")) { eA=3; eF="south"; wA=3; wF="north"; }
+        if      (pair(d1,d2,"N","S"))    { eA=2; eF="north"; wA=2; wF="south"; }
+        else if (pair(d1,d2,"N","SE"))   { eA=3; eF="south"; wA=2; wF="south"; }
+        else if (pair(d1,d2,"N","SO"))   { eA=2; eF="north"; wA=3; wF="east";  }
+        else if (pair(d1,d2,"S","NE"))   { eA=3; eF="west";  wA=2; wF="south"; }
+        else if (pair(d1,d2,"S","NO"))   { eA=2; eF="north"; wA=3; wF="north"; }
+        else if (pair(d1,d2,"NE","SO"))  { eA=3; eF="west";  wA=3; wF="east";  }
+        else if (pair(d1,d2,"NO","SE"))  { eA=3; eF="south"; wA=3; wF="north"; }
         safeAdd(region, cx + 1, cy + 1, cz, leafLitter(eA, eF), centers);
         safeAdd(region, cx - 1, cy + 1, cz, leafLitter(wA, wF), centers);
     }
 
-    private void placeLeafEW(Object region, int cx, int cy, int cz, String d1, String d2, Set<BlockPos> centers) {
+    private void placeLeafEW(Object region, int cx, int cy, int cz,
+                              String d1, String d2, Set<BlockPos> centers) {
         int nA = 2; String nF = "west";
         int sA = 2; String sF = "east";
-        if (pair(d1,d2,"O","E"))        { nA=2; nF="west";  sA=2; sF="east";  }
-        else if (pair(d1,d2,"E","NO"))  { nA=3; nF="south"; sA=2; sF="east";  }
-        else if (pair(d1,d2,"O","NE"))  { nA=3; nF="east";  sA=2; sF="east";  }
-        else if (pair(d1,d2,"O","SE"))  { nA=2; nF="west";  sA=3; sF="north"; }
-        else if (pair(d1,d2,"E","SO"))  { nA=2; nF="west";  sA=3; sF="west";  }
-        else if (pair(d1,d2,"NE","SO")) { nA=3; nF="east";  sA=3; sF="west";  }
-        else if (pair(d1,d2,"NO","SE")) { nA=3; nF="south"; sA=3; sF="north"; }
+        if      (pair(d1,d2,"O","E"))    { nA=2; nF="west";  sA=2; sF="east";  }
+        else if (pair(d1,d2,"E","NO"))   { nA=3; nF="south"; sA=2; sF="east";  }
+        else if (pair(d1,d2,"O","NE"))   { nA=3; nF="east";  sA=2; sF="east";  }
+        else if (pair(d1,d2,"O","SE"))   { nA=2; nF="west";  sA=3; sF="north"; }
+        else if (pair(d1,d2,"E","SO"))   { nA=2; nF="west";  sA=3; sF="west";  }
+        else if (pair(d1,d2,"NE","SO"))  { nA=3; nF="east";  sA=3; sF="west";  }
+        else if (pair(d1,d2,"NO","SE"))  { nA=3; nF="south"; sA=3; sF="north"; }
         safeAdd(region, cx, cy + 1, cz - 1, leafLitter(nA, nF), centers);
         safeAdd(region, cx, cy + 1, cz + 1, leafLitter(sA, sF), centers);
     }
 
-    private void placeDiagJoints(Object region, int cx, int cy, int cz, boolean axisNS, Set<BlockPos> centers) {
+    private void placeDiagJoints(Object region, int cx, int cy, int cz,
+                                  boolean axisNS, Set<BlockPos> centers) {
         int[][] offs = {{1,-1},{-1,-1},{1,1},{-1,1}};
         for (int[] o : offs) {
             int ddx = o[0], ddz = o[1];
             String face;
-            if (axisNS) face = ddx > 0 ? (ddz < 0 ? "east" : "north") : (ddz < 0 ? "south" : "west");
-            else face = ddz < 0 ? (ddx > 0 ? "north" : "south") : (ddx > 0 ? "east" : "west");
-            int jx = axisNS ? cx : cx + ddx;
-            int jz = axisNS ? cz + ddz : cz;
+            if (axisNS) face = ddx > 0 ? (ddz < 0 ? "east"  : "north") : (ddz < 0 ? "south" : "west");
+            else        face = ddz < 0 ? (ddx > 0 ? "north" : "south") : (ddx > 0 ? "east"  : "west");
+            int jx = axisNS ? cx        : cx + ddx;
+            int jz = axisNS ? cz + ddz  : cz;
             if (!centers.contains(new BlockPos(jx, cy, jz))) {
-                regionAddBlock(region, jx, cy, jz, Blocks.GRAVEL.defaultBlockState());
+                regionAddBlock(region, jx, cy,     jz, Blocks.GRAVEL.defaultBlockState());
                 regionAddBlock(region, jx, cy + 1, jz, leafLitter(3, face));
             }
         }
@@ -546,7 +569,7 @@ public class RailPathTool implements CustomTool {
         int dz = Integer.compare(seg.cz(), cz);
         String d = "";
         if (dz == -1) d = "N"; else if (dz == 1) d = "S";
-        if (dx == 1) d = d + "E"; else if (dx == -1) d = d + "O";
+        if (dx ==  1) d = d + "E"; else if (dx == -1) d = d + "O";
         return d;
     }
 
@@ -557,6 +580,8 @@ public class RailPathTool implements CustomTool {
     private void safeAdd(Object region, int x, int y, int z, BlockState state, Set<BlockPos> centers) {
         if (!centers.contains(new BlockPos(x, y, z))) regionAddBlock(region, x, y, z, state);
     }
+
+    // ── Terrain & spline ────────────────────────────────────────────────────
 
     private List<Pt> snapAllToGround(List<Pt> pts) {
         var world = Minecraft.getInstance().level;
@@ -569,7 +594,8 @@ public class RailPathTool implements CustomTool {
         return out;
     }
 
-    private static int findSurface(net.minecraft.client.multiplayer.ClientLevel world, int x, int startY, int z) {
+    private static int findSurface(net.minecraft.client.multiplayer.ClientLevel world,
+                                   int x, int startY, int z) {
         var pos = new BlockPos.MutableBlockPos(x, startY, z);
         for (int dy = 0; dy >= -256; dy--) {
             pos.setY(startY + dy);
@@ -583,18 +609,18 @@ public class RailPathTool implements CustomTool {
     }
 
     private List<Pt> catmullRom(List<BlockPos> pts, int dens) {
-        List<net.minecraft.world.phys.Vec3> v = new ArrayList<>();
-        for (BlockPos p : pts) v.add(net.minecraft.world.phys.Vec3.atCenterOf(p));
+        List<Vec3> v = new ArrayList<>();
+        for (BlockPos p : pts) v.add(Vec3.atCenterOf(p));
 
-        List<net.minecraft.world.phys.Vec3> ext = new ArrayList<>();
+        List<Vec3> ext = new ArrayList<>();
         ext.add(v.get(0).add(v.get(0).subtract(v.get(1))));
         ext.addAll(v);
         ext.add(v.get(v.size()-1).add(v.get(v.size()-1).subtract(v.get(v.size()-2))));
 
-        List<net.minecraft.world.phys.Vec3> raw = new ArrayList<>();
+        List<Vec3> raw = new ArrayList<>();
         for (int i = 1; i < ext.size() - 2; i++) {
-            var p0 = ext.get(i-1); var p1 = ext.get(i);
-            var p2 = ext.get(i+1); var p3 = ext.get(i+2);
+            Vec3 p0 = ext.get(i-1), p1 = ext.get(i),
+                 p2 = ext.get(i+1), p3 = ext.get(i+2);
             int steps = Math.max(1, (int) Math.ceil(p1.distanceTo(p2) * dens));
             for (int s = 0; s < steps; s++) raw.add(crEval(p0, p1, p2, p3, (double) s / steps));
         }
@@ -602,20 +628,27 @@ public class RailPathTool implements CustomTool {
 
         List<Pt> out = new ArrayList<>();
         BlockPos last = null;
-        for (var q : raw) {
-            int bx = (int) Math.floor(q.x); int by = (int) Math.floor(q.y); int bz = (int) Math.floor(q.z);
+        for (Vec3 q : raw) {
+            int bx = (int) Math.floor(q.x);
+            int by = (int) Math.floor(q.y);
+            int bz = (int) Math.floor(q.z);
             BlockPos bp = new BlockPos(bx, by, bz);
             if (!bp.equals(last)) { out.add(new Pt(q.x, q.y, q.z, bx, by, bz)); last = bp; }
         }
         return out;
     }
 
-    private static net.minecraft.world.phys.Vec3 crEval(net.minecraft.world.phys.Vec3 p0, net.minecraft.world.phys.Vec3 p1, net.minecraft.world.phys.Vec3 p2, net.minecraft.world.phys.Vec3 p3, double t) {
+    private static Vec3 crEval(Vec3 p0, Vec3 p1, Vec3 p2, Vec3 p3, double t) {
         double t2 = t*t, t3 = t2*t;
-        return new net.minecraft.world.phys.Vec3(cr(p0.x,p1.x,p2.x,p3.x,t,t2,t3), cr(p0.y,p1.y,p2.y,p3.y,t,t2,t3), cr(p0.z,p1.z,p2.z,p3.z,t,t2,t3));
+        return new Vec3(
+            cr(p0.x, p1.x, p2.x, p3.x, t, t2, t3),
+            cr(p0.y, p1.y, p2.y, p3.y, t, t2, t3),
+            cr(p0.z, p1.z, p2.z, p3.z, t, t2, t3)
+        );
     }
 
-    private static double cr(double a, double b, double c, double d, double t, double t2, double t3) {
-        return 0.5*(2*b+(-a+c)*t+(2*a-5*b+4*c-d)*t2+(-a+3*b-3*c+d)*t3);
+    private static double cr(double a, double b, double c, double d,
+                              double t, double t2, double t3) {
+        return 0.5 * (2*b + (-a+c)*t + (2*a-5*b+4*c-d)*t2 + (-a+3*b-3*c+d)*t3);
     }
 }
