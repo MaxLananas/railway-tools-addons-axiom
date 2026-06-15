@@ -28,12 +28,10 @@ dependencies {
     mappings           "net.fabricmc:yarn:${yarn_mappings}:v2"
     modImplementation  "net.fabricmc:fabric-loader:${loader_version}"
     modImplementation  "net.fabricmc.fabric-api:fabric-api:${fabric_api_version}"
-    
-    fileTree(dir: 'libs', include: 'Axiom-*.jar').each { file ->
-        modCompileOnly(files(file)) {
-            transitive = false
-        }
-    }
+
+    // FileCollection (fileTree/files) ne supporte pas 'transitive'
+    // modCompileOnly suffit : Axiom ne sera pas inclus dans le JAR final
+    modCompileOnly fileTree(dir: 'libs', include: 'Axiom-*.jar')
 }
 
 java {
