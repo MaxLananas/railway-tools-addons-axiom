@@ -1,20 +1,20 @@
 package com.bte.railpathtool.tools;
 
-import com.moulberry.axiomclientapi.CustomTool;
-import com.moulberry.axiomclientapi.IAxiomWorldRenderContext;
-import net.minecraft.client.Minecraft;
-import net.minecraft.core.BlockPos;
-import net.minecraft.core.Direction;
-import net.minecraft.world.level.block.Blocks;
-import net.minecraft.world.level.block.state.BlockState;
-import net.minecraft.world.level.block.state.properties.BlockStateProperties;
-import net.minecraft.world.level.block.state.properties.WallSide;
-import net.minecraft.world.phys.BlockHitResult;
-import net.minecraft.world.phys.Vec3;
+import net.minecraft.block.BlockState;
+import net.minecraft.block.Blocks;
+import net.minecraft.block.LecternBlock;
+import net.minecraft.block.enums.WallMountLocation;
+import net.minecraft.client.MinecraftClient;
+import net.minecraft.client.world.ClientWorld;
+import net.minecraft.state.property.Properties;
+import net.minecraft.util.hit.BlockHitResult;
+import net.minecraft.util.math.BlockPos;
+import net.minecraft.util.math.Direction;
+import net.minecraft.util.math.Vec3d;
 
 import java.util.*;
 
-public class RailPathTool implements CustomTool {
+public class RailPathTool {
 
     private static final String[] STYLE_LABELS = {"Classique", "Naturel"};
 
@@ -27,8 +27,6 @@ public class RailPathTool implements CustomTool {
     private final int[] themeIndex = {0};
 
     private Object previewRegion = null;
-    private Object toolService = null;
-    private Object regionProvider = null;
 
     // ── ImGui par réflexion ──────────────────────────────────────────────────
 
@@ -38,7 +36,8 @@ public class RailPathTool implements CustomTool {
     private static Class<?> imguiClass() {
         if (!IMGUI_RESOLVED) {
             IMGUI_RESOLVED = true;
-            try { IMGUI_CLASS = Class.forName("imgui.ImGui"); } catch (ClassNotFoundException ignored) {}
+            try { IMGUI_CLASS = Class.forName("imgui.ImGui"); }
+            catch (ClassNotFoundException ignored) {}
         }
         return IMGUI_CLASS;
     }
@@ -46,63 +45,38 @@ public class RailPathTool implements CustomTool {
     private static void igText(String s) {
         try { Class<?> c = imguiClass(); if (c != null) c.getMethod("text", String.class).invoke(null, s); } catch (Exception ignored) {}
     }
-
     private static void igTextDisabled(String s) {
         try { Class<?> c = imguiClass(); if (c != null) c.getMethod("textDisabled", String.class).invoke(null, s); } catch (Exception ignored) {}
     }
-
     private static void igSeparator() {
         try { Class<?> c = imguiClass(); if (c != null) c.getMethod("separator").invoke(null); } catch (Exception ignored) {}
     }
-
     private static void igSameLine() {
         try { Class<?> c = imguiClass(); if (c != null) c.getMethod("sameLine").invoke(null); } catch (Exception ignored) {}
     }
-
     private static boolean igSliderInt(String label, int[] v, int min, int max) {
         try { Class<?> c = imguiClass(); if (c != null) return (boolean) c.getMethod("sliderInt", String.class, int[].class, int.class, int.class).invoke(null, label, v, min, max); } catch (Exception ignored) {}
         return false;
     }
-
-    private static boolean igCheckbox(String label, boolean[] v) {
-        try { Class<?> c = imguiClass(); if (c != null) return (boolean) c.getMethod("checkbox", String.class, boolean[].class).invoke(null, label, v); } catch (Exception ignored) {}
+    private static boolean igCheckbox(String label, boolean v) {
+        try { Class<?> c = imguiClass(); if (c != null) { boolean[] arr = {v}; return (boolean) c.getMethod("checkbox", String.class, boolean[].class).invoke(null, label, arr); } } catch (Exception ignored) {}
         return false;
     }
-
     private static boolean igRadioButton(String label, boolean active) {
         try { Class<?> c = imguiClass(); if (c != null) return (boolean) c.getMethod("radioButton", String.class, boolean.class).invoke(null, label, active); } catch (Exception ignored) {}
         return false;
     }
-
     private static boolean igButton(String label) {
         try { Class<?> c = imguiClass(); if (c != null) return (boolean) c.getMethod("button", String.class).invoke(null, label); } catch (Exception ignored) {}
         return false;
     }
 
-    // ── Services Axiom par réflexion ─────────────────────────────────────────
-
-    private Object getToolService() {
-        if (toolService != null) return toolService;
-        try {
-            Class<?> svcClass = Class.forName("com.moulberry.axiomclientapi.service.ToolService");
-            for (Object s : ServiceLoader.load(svcClass)) { toolService = s; break; }
-        } catch (Exception ignored) {}
-        return toolService;
-    }
-
-    private Object getRegionProvider() {
-        if (regionProvider != null) return regionProvider;
-        try {
-            Class<?> svcClass = Class.forName("com.moulberry.axiomclientapi.service.RegionProvider");
-            for (Object s : ServiceLoader.load(svcClass)) { regionProvider = s; break; }
-        } catch (Exception ignored) {}
-        return regionProvider;
-    }
+    // ── API Axiom par réflexion ──────────────────────────────────────────────
 
     private Object createBlockRegion() {
         try {
-            Object rp = getRegionProvider();
-            if (rp != null) return rp.getClass().getMethod("createBlock").invoke(rp);
+            Class<?> rhClass = Class.forName("com.moulberry.axiom.utils.RegionHelper");
+            return rhClass.getMethod("createBlockRegion").invoke(null);
         } catch (Exception ignored) {}
         return null;
     }
@@ -116,9 +90,15 @@ public class RailPathTool implements CustomTool {
         if (region == null) return;
         try {
             region.getClass()
-                  .getMethod("addBlock", int.class, int.class, int.class, BlockState.class)
+                  .getMethod("setBlockState", int.class, int.class, int.class, BlockState.class)
                   .invoke(region, x, y, z, state);
-        } catch (Exception ignored) {}
+        } catch (Exception e1) {
+            try {
+                region.getClass()
+                      .getMethod("addBlock", BlockPos.class, BlockState.class)
+                      .invoke(region, new BlockPos(x, y, z), state);
+            } catch (Exception ignored) {}
+        }
     }
 
     private boolean regionIsEmpty(Object region) {
@@ -127,46 +107,56 @@ public class RailPathTool implements CustomTool {
         catch (Exception ignored) { return true; }
     }
 
-    private void regionRender(Object region, IAxiomWorldRenderContext rc, float opacity) {
+    private void regionRender(Object region) {
         if (region == null) return;
         try {
-            region.getClass()
-                  .getMethod("render", IAxiomWorldRenderContext.class, Vec3.class, float.class, float.class)
-                  .invoke(region, rc, Vec3.ZERO, opacity, 0.25f);
+            // Cherche la méthode render disponible
+            for (var method : region.getClass().getMethods()) {
+                if (method.getName().equals("render") && method.getParameterCount() <= 2) {
+                    method.invoke(region);
+                    return;
+                }
+            }
         } catch (Exception ignored) {}
     }
 
     private void pushRegionChange(Object region) {
         try {
-            Object svc = getToolService();
-            if (svc == null) return;
-            Class<?> brClass = Class.forName("com.moulberry.axiomclientapi.regions.BlockRegion");
-            svc.getClass().getMethod("pushBlockRegionChange", brClass).invoke(svc, region);
-        } catch (Exception ignored) {}
+            Class<?> rhClass = Class.forName("com.moulberry.axiom.utils.RegionHelper");
+            rhClass.getMethod("pushBlockRegionChange", region.getClass().getInterfaces()[0])
+                   .invoke(null, region);
+        } catch (Exception e1) {
+            try {
+                Class<?> tmClass = Class.forName("com.moulberry.axiom.tools.ToolManager");
+                for (var m : tmClass.getMethods()) {
+                    if (m.getName().contains("push") || m.getName().contains("commit")) {
+                        m.invoke(null, region);
+                        return;
+                    }
+                }
+            } catch (Exception ignored) {}
+        }
     }
 
     private BlockHitResult doRaycast() {
         try {
-            Object svc = getToolService();
-            if (svc != null) return (BlockHitResult) svc.getClass().getMethod("raycastBlock").invoke(svc);
+            Class<?> rhClass = Class.forName("com.moulberry.axiom.utils.RegionHelper");
+            return (BlockHitResult) rhClass.getMethod("raycastBlock").invoke(null);
         } catch (Exception ignored) {}
         return null;
     }
 
-    // ── CustomTool ───────────────────────────────────────────────────────────
+    // ── Interface Tool (méthodes appelées par Axiom) ─────────────────────────
 
-    @Override
     public String name() { return "BTE Rail Path"; }
 
-    @Override
     public void reset() {
         points.clear();
         regionClear(previewRegion);
         dirty = false;
     }
 
-    @Override
-    public void render(IAxiomWorldRenderContext rc) {
+    public void render(Object context) {
         if (previewRegion == null) previewRegion = createBlockRegion();
         if (dirty) {
             regionClear(previewRegion);
@@ -174,12 +164,10 @@ public class RailPathTool implements CustomTool {
             dirty = false;
         }
         if (showPreview[0] && !regionIsEmpty(previewRegion)) {
-            float pulse = 0.6f + 0.2f * (float) Math.sin(System.currentTimeMillis() / 400_000.0);
-            regionRender(previewRegion, rc, pulse);
+            regionRender(previewRegion);
         }
     }
 
-    @Override
     public void displayImguiOptions() {
         igText("=== BTE Rail Path Tool ===");
         igText("Points : " + points.size());
@@ -187,9 +175,12 @@ public class RailPathTool implements CustomTool {
 
         boolean changed = false;
         if (igSliderInt("Densite (pts/bloc)", density, 2, 32)) changed = true;
-        if (igCheckbox("Coller au sol", snapToGround)) changed = true;
+
+        boolean newSnap = igCheckbox("Coller au sol", snapToGround[0]);
+        if (newSnap != snapToGround[0]) { snapToGround[0] = newSnap; changed = true; }
         igSameLine();
-        igCheckbox("Apercu", showPreview);
+        boolean newPrev = igCheckbox("Apercu", showPreview[0]);
+        if (newPrev != showPreview[0]) { showPreview[0] = newPrev; }
 
         igSeparator();
         igText("Style :");
@@ -219,23 +210,20 @@ public class RailPathTool implements CustomTool {
         igTextDisabled("Clic droit: poser point | Entree: valider | Suppr: annuler");
     }
 
-    @Override
     public boolean callUseTool() {
         BlockHitResult hit = doRaycast();
         if (hit == null) return false;
-        points.add(hit.getBlockPos().above());
+        points.add(hit.getBlockPos().up());
         dirty = true;
         return true;
     }
 
-    @Override
     public boolean callConfirm() {
         if (points.size() < 2) return false;
         confirm();
         return true;
     }
 
-    @Override
     public boolean callDelete() {
         if (points.isEmpty()) return false;
         points.remove(points.size() - 1);
@@ -294,24 +282,24 @@ public class RailPathTool implements CustomTool {
 
     private BlockState wallBlock() {
         return themeIndex[0] == 0
-                ? Blocks.MUD_BRICK_WALL.defaultBlockState()
-                : Blocks.ANDESITE_WALL.defaultBlockState();
+                ? Blocks.MUD_BRICK_WALL.getDefaultState()
+                : Blocks.ANDESITE_WALL.getDefaultState();
     }
 
     private BlockState makeWall(Direction... dirs) {
         BlockState s = wallBlock()
-                .setValue(BlockStateProperties.UP, false)
-                .setValue(BlockStateProperties.WATERLOGGED, false)
-                .setValue(BlockStateProperties.NORTH_WALL, WallSide.NONE)
-                .setValue(BlockStateProperties.SOUTH_WALL, WallSide.NONE)
-                .setValue(BlockStateProperties.EAST_WALL, WallSide.NONE)
-                .setValue(BlockStateProperties.WEST_WALL, WallSide.NONE);
+                .with(Properties.UP, false)
+                .with(Properties.WATERLOGGED, false)
+                .with(Properties.NORTH_WALL_SHAPE, net.minecraft.block.enums.WallShape.NONE)
+                .with(Properties.SOUTH_WALL_SHAPE, net.minecraft.block.enums.WallShape.NONE)
+                .with(Properties.EAST_WALL_SHAPE,  net.minecraft.block.enums.WallShape.NONE)
+                .with(Properties.WEST_WALL_SHAPE,  net.minecraft.block.enums.WallShape.NONE);
         for (Direction d : dirs) {
             s = switch (d) {
-                case NORTH -> s.setValue(BlockStateProperties.NORTH_WALL, WallSide.LOW);
-                case SOUTH -> s.setValue(BlockStateProperties.SOUTH_WALL, WallSide.LOW);
-                case EAST  -> s.setValue(BlockStateProperties.EAST_WALL,  WallSide.LOW);
-                case WEST  -> s.setValue(BlockStateProperties.WEST_WALL,  WallSide.LOW);
+                case NORTH -> s.with(Properties.NORTH_WALL_SHAPE, net.minecraft.block.enums.WallShape.LOW);
+                case SOUTH -> s.with(Properties.SOUTH_WALL_SHAPE, net.minecraft.block.enums.WallShape.LOW);
+                case EAST  -> s.with(Properties.EAST_WALL_SHAPE,  net.minecraft.block.enums.WallShape.LOW);
+                case WEST  -> s.with(Properties.WEST_WALL_SHAPE,  net.minecraft.block.enums.WallShape.LOW);
                 default    -> s;
             };
         }
@@ -320,58 +308,24 @@ public class RailPathTool implements CustomTool {
 
     private BlockState makeSide(Direction facing) {
         if (themeIndex[0] == 0) {
-            var id = net.minecraft.resources.ResourceLocation.parse("minecraft:spruce_shelf");
-            var block = net.minecraft.core.registries.BuiltInRegistries.BLOCK.get(id);
-            if (block != Blocks.AIR) {
-                BlockState st = block.defaultBlockState();
-                for (var prop : st.getProperties()) {
-                    try {
-                        if (prop.getName().equals("facing")) {
-                            st = setEnumProp(st, prop, facing.getName());
-                        } else if (prop.getName().equals("waterlogged") || prop.getName().equals("powered")) {
-                            st = setBoolProp(st, prop, false);
-                        }
-                    } catch (Exception ignored) {}
-                }
-                return st;
-            }
-            return Blocks.SPRUCE_TRAPDOOR.defaultBlockState()
-                    .setValue(BlockStateProperties.HORIZONTAL_FACING, facing)
-                    .setValue(BlockStateProperties.OPEN, true)
-                    .setValue(BlockStateProperties.WATERLOGGED, false);
+            return Blocks.SPRUCE_TRAPDOOR.getDefaultState()
+                    .with(Properties.HORIZONTAL_FACING, facing)
+                    .with(Properties.OPEN, true)
+                    .with(Properties.WATERLOGGED, false);
         } else {
-            return Blocks.IRON_DOOR.defaultBlockState()
-                    .setValue(BlockStateProperties.HORIZONTAL_FACING, facing)
-                    .setValue(BlockStateProperties.DOOR_HINGE,
-                            net.minecraft.world.level.block.state.properties.DoorHingeSide.LEFT)
-                    .setValue(BlockStateProperties.DOUBLE_BLOCK_HALF,
-                            net.minecraft.world.level.block.state.properties.DoubleBlockHalf.UPPER)
-                    .setValue(BlockStateProperties.POWERED, false)
-                    .setValue(BlockStateProperties.OPEN, false);
+            return Blocks.IRON_DOOR.getDefaultState()
+                    .with(Properties.HORIZONTAL_FACING, facing)
+                    .with(Properties.DOOR_HINGE, net.minecraft.block.enums.DoorHinge.LEFT)
+                    .with(Properties.DOUBLE_BLOCK_HALF, net.minecraft.block.enums.DoubleBlockHalf.UPPER)
+                    .with(Properties.POWERED, false)
+                    .with(Properties.OPEN, false);
         }
-    }
-
-    @SuppressWarnings({"unchecked", "rawtypes"})
-    private BlockState setEnumProp(BlockState st,
-            net.minecraft.world.level.block.state.properties.Property prop, String value) {
-        for (Object v : prop.getPossibleValues()) {
-            if (v.toString().equalsIgnoreCase(value)) return st.setValue(prop, (Comparable) v);
-        }
-        return st;
-    }
-
-    @SuppressWarnings("unchecked")
-    private BlockState setBoolProp(BlockState st,
-            net.minecraft.world.level.block.state.properties.Property prop, boolean value) {
-        if (prop instanceof net.minecraft.world.level.block.state.properties.BooleanProperty bp)
-            return st.setValue(bp, value);
-        return st;
     }
 
     private BlockState makeCoral(Direction facing) {
-        return Blocks.DEAD_BUBBLE_CORAL_WALL_FAN.defaultBlockState()
-                .setValue(BlockStateProperties.HORIZONTAL_FACING, facing)
-                .setValue(BlockStateProperties.WATERLOGGED, false);
+        return Blocks.DEAD_BUBBLE_CORAL_WALL_FAN.getDefaultState()
+                .with(Properties.HORIZONTAL_FACING, facing)
+                .with(Properties.WATERLOGGED, false);
     }
 
     private void placeClassic(Object region, Seg cur, Seg prv, Seg nxt, Set<BlockPos> centers) {
@@ -453,16 +407,16 @@ public class RailPathTool implements CustomTool {
                       || (idx < all.size() - 1 && all.get(idx + 1).cy() == cy - 1);
 
         if (!rising) {
-            regionAddBlock(region, cx, cy, cz, Blocks.LECTERN.defaultBlockState()
-                    .setValue(BlockStateProperties.HORIZONTAL_FACING, facing)
-                    .setValue(net.minecraft.world.level.block.LecternBlock.HAS_BOOK, false));
-            regionAddBlock(region, cx, cy + 1, cz, Blocks.PALE_MOSS_CARPET.defaultBlockState());
+            regionAddBlock(region, cx, cy, cz, Blocks.LECTERN.getDefaultState()
+                    .with(Properties.HORIZONTAL_FACING, facing)
+                    .with(LecternBlock.HAS_BOOK, false));
+            regionAddBlock(region, cx, cy + 1, cz, Blocks.PALE_MOSS_CARPET.getDefaultState());
         } else {
-            regionAddBlock(region, cx, cy, cz, Blocks.PALE_MOSS_BLOCK.defaultBlockState());
+            regionAddBlock(region, cx, cy, cz, Blocks.PALE_MOSS_BLOCK.getDefaultState());
             regionAddBlock(region, cx, cy + 1, cz, oakButton(facing));
         }
 
-        BlockState gravel = Blocks.GRAVEL.defaultBlockState();
+        BlockState gravel = Blocks.GRAVEL.getDefaultState();
         if (axisNS) {
             regionAddBlock(region, cx + 1, cy, cz, gravel);
             regionAddBlock(region, cx - 1, cy, cz, gravel);
@@ -480,19 +434,11 @@ public class RailPathTool implements CustomTool {
         placeDiagJoints(region, cx, cy, cz, axisNS, centers);
     }
 
-    @SuppressWarnings({"unchecked", "rawtypes"})
     private BlockState oakButton(Direction facing) {
-        BlockState state = Blocks.OAK_BUTTON.defaultBlockState();
-        for (var prop : state.getProperties()) {
-            if (prop.getName().equals("face")) {
-                state = setEnumProp(state, prop, "floor");
-            } else if (prop.getName().equals("facing")) {
-                state = setEnumProp(state, prop, facing.getName());
-            } else if (prop.getName().equals("powered")) {
-                state = setBoolProp(state, prop, false);
-            }
-        }
-        return state;
+        return Blocks.OAK_BUTTON.getDefaultState()
+                .with(Properties.WALL_MOUNT_LOCATION, WallMountLocation.FLOOR)
+                .with(Properties.HORIZONTAL_FACING, facing)
+                .with(Properties.POWERED, false);
     }
 
     private BlockState leafLitter(int amount, String facing) {
@@ -502,17 +448,19 @@ public class RailPathTool implements CustomTool {
             case "west"  -> Direction.WEST;
             default      -> Direction.NORTH;
         };
-        BlockState state = Blocks.LEAF_LITTER.defaultBlockState()
-                .setValue(BlockStateProperties.HORIZONTAL_FACING, dir);
-        for (var prop : state.getProperties()) {
-            if (prop.getName().equals("segment_amount")
-                    && prop instanceof net.minecraft.world.level.block.state.properties.IntegerProperty ip) {
-                int mn = ip.getPossibleValues().stream().mapToInt(v -> v).min().orElse(1);
-                int mx = ip.getPossibleValues().stream().mapToInt(v -> v).max().orElse(4);
-                state = state.setValue(ip, Math.max(mn, Math.min(mx, amount)));
-                break;
+        BlockState state = Blocks.LEAF_LITTER.getDefaultState()
+                .with(Properties.HORIZONTAL_FACING, dir);
+        // segment_amount si disponible
+        try {
+            var prop = state.getProperties().stream()
+                    .filter(p -> p.getName().equals("segment_amount"))
+                    .findFirst().orElse(null);
+            if (prop instanceof net.minecraft.state.property.IntProperty ip) {
+                int mn = ip.getValues().stream().mapToInt(v -> v).min().orElse(1);
+                int mx = ip.getValues().stream().mapToInt(v -> v).max().orElse(4);
+                state = state.with(ip, Math.max(mn, Math.min(mx, amount)));
             }
-        }
+        } catch (Exception ignored) {}
         return state;
     }
 
@@ -557,7 +505,7 @@ public class RailPathTool implements CustomTool {
             int jx = axisNS ? cx        : cx + ddx;
             int jz = axisNS ? cz + ddz  : cz;
             if (!centers.contains(new BlockPos(jx, cy, jz))) {
-                regionAddBlock(region, jx, cy,     jz, Blocks.GRAVEL.defaultBlockState());
+                regionAddBlock(region, jx, cy,     jz, Blocks.GRAVEL.getDefaultState());
                 regionAddBlock(region, jx, cy + 1, jz, leafLitter(3, face));
             }
         }
@@ -584,7 +532,7 @@ public class RailPathTool implements CustomTool {
     // ── Terrain & spline ────────────────────────────────────────────────────
 
     private List<Pt> snapAllToGround(List<Pt> pts) {
-        var world = Minecraft.getInstance().level;
+        var world = MinecraftClient.getInstance().world;
         if (world == null) return pts;
         List<Pt> out = new ArrayList<>();
         for (Pt p : pts) {
@@ -594,9 +542,8 @@ public class RailPathTool implements CustomTool {
         return out;
     }
 
-    private static int findSurface(net.minecraft.client.multiplayer.ClientLevel world,
-                                   int x, int startY, int z) {
-        var pos = new BlockPos.MutableBlockPos(x, startY, z);
+    private static int findSurface(ClientWorld world, int x, int startY, int z) {
+        BlockPos.Mutable pos = new BlockPos.Mutable(x, startY, z);
         for (int dy = 0; dy >= -256; dy--) {
             pos.setY(startY + dy);
             if (!world.getBlockState(pos).isAir()) return startY + dy + 1;
@@ -609,18 +556,18 @@ public class RailPathTool implements CustomTool {
     }
 
     private List<Pt> catmullRom(List<BlockPos> pts, int dens) {
-        List<Vec3> v = new ArrayList<>();
-        for (BlockPos p : pts) v.add(Vec3.atCenterOf(p));
+        List<Vec3d> v = new ArrayList<>();
+        for (BlockPos p : pts) v.add(Vec3d.ofCenter(p));
 
-        List<Vec3> ext = new ArrayList<>();
+        List<Vec3d> ext = new ArrayList<>();
         ext.add(v.get(0).add(v.get(0).subtract(v.get(1))));
         ext.addAll(v);
         ext.add(v.get(v.size()-1).add(v.get(v.size()-1).subtract(v.get(v.size()-2))));
 
-        List<Vec3> raw = new ArrayList<>();
+        List<Vec3d> raw = new ArrayList<>();
         for (int i = 1; i < ext.size() - 2; i++) {
-            Vec3 p0 = ext.get(i-1), p1 = ext.get(i),
-                 p2 = ext.get(i+1), p3 = ext.get(i+2);
+            Vec3d p0 = ext.get(i-1), p1 = ext.get(i),
+                  p2 = ext.get(i+1), p3 = ext.get(i+2);
             int steps = Math.max(1, (int) Math.ceil(p1.distanceTo(p2) * dens));
             for (int s = 0; s < steps; s++) raw.add(crEval(p0, p1, p2, p3, (double) s / steps));
         }
@@ -628,7 +575,7 @@ public class RailPathTool implements CustomTool {
 
         List<Pt> out = new ArrayList<>();
         BlockPos last = null;
-        for (Vec3 q : raw) {
+        for (Vec3d q : raw) {
             int bx = (int) Math.floor(q.x);
             int by = (int) Math.floor(q.y);
             int bz = (int) Math.floor(q.z);
@@ -638,9 +585,9 @@ public class RailPathTool implements CustomTool {
         return out;
     }
 
-    private static Vec3 crEval(Vec3 p0, Vec3 p1, Vec3 p2, Vec3 p3, double t) {
+    private static Vec3d crEval(Vec3d p0, Vec3d p1, Vec3d p2, Vec3d p3, double t) {
         double t2 = t*t, t3 = t2*t;
-        return new Vec3(
+        return new Vec3d(
             cr(p0.x, p1.x, p2.x, p3.x, t, t2, t3),
             cr(p0.y, p1.y, p2.y, p3.y, t, t2, t3),
             cr(p0.z, p1.z, p2.z, p3.z, t, t2, t3)
