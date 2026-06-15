@@ -1,5 +1,5 @@
 plugins {
-    id 'fabric-loom' version '1.15.5'
+    id 'fabric-loom' version '1.16-SNAPSHOT'  // ✅ était 1.15.5
     id 'java'
 }
 
@@ -29,8 +29,6 @@ dependencies {
     modImplementation  "net.fabricmc:fabric-loader:${loader_version}"
     modImplementation  "net.fabricmc.fabric-api:fabric-api:${fabric_api_version}"
 
-    // FileCollection (fileTree/files) ne supporte pas 'transitive'
-    // modCompileOnly suffit : Axiom ne sera pas inclus dans le JAR final
     modCompileOnly fileTree(dir: 'libs', include: 'Axiom-*.jar')
 }
 
